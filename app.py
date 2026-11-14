@@ -479,39 +479,42 @@ elif key == "team":
     shown = [m for m in data["members"] if q in m["name"].lower() and sf in ("Alle", m["status"])]
 
     for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
-        st.markdown(f"<div class='member-card-wrapper'>", unsafe_allow_html=True)
-        
-        # Statt HTML im Popover nutzen wir hier eine saubere Beschriftung für den Button
-        popover_label = f"👤 {m['name']}  ({m['rank']})  –  Status: {m['status']}"
+        # Inhalt der Karte mit den echten Farben und Badges
+        card_content = (f"<div style='display:flex;justify-content:space-between;align-items:center;width:100%'>"
+                        f"<div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
+                        f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
+                        f"<div style='display:flex;align-items:center;gap:12px;'>{badge(m['rank'])}</div></div>")
         
         if can_write:
-            with st.popover(popover_label, use_container_width=True):
-                st.markdown(f"### ✏️ {esc(m['name'])} bearbeiten")
-                a, b = st.columns(2)
-                nr = a.selectbox("Rang", RANKS, index=RANKS.index(m["rank"]) if m["rank"] in RANKS else 0, key=f"r{m['id']}")
-                ns = b.selectbox("Status", MEMBER_STATUS, index=MEMBER_STATUS.index(m["status"]) if m["status"] in MEMBER_STATUS else 0, key=f"s{m['id']}")
-                if st.button("💾 Speichern", key=f"sv{m['id']}"):
-                    update("members", m["id"], f"{m['name']}: {nr}/{ns}", rank=nr, status=ns)
-                st.markdown("---")
-                st.markdown("**Aus dem Team entfernen**")
-                why = st.text_area("Grund (Pflicht)", key=f"why{m['id']}", height=80)
-                if st.button("🚪 Entfernen & archivieren", key=f"rm{m['id']}"):
-                    if not why.strip(): st.warning("Bitte einen Grund angeben.")
-                    else:
-                        with edit(f"{m['name']} aus dem Team entfernt") as d:
-                            d["members"] = [x for x in d["members"] if x["id"] != m["id"]]
-                            d["archive"].append({"id": uid(), "name": m["name"], "discord_id": m.get("discord_id", "-"),
-                                                 "rank": m["rank"], "joined": m.get("joined", ""),
-                                                 "removed": date.today().isoformat(), "reason": why.strip(),
-                                                 "removed_by": user["username"]})
-                        st.rerun()
+            # Wir betten die Karte optisch ein und platzieren das Bearbeiten-Popover elegant daneben/integriert
+            col_card, col_btn = st.columns([11, 1])
+            with col_card:
+                show(card_content, "member-card")
+            with col_btn:
+                st.markdown("<div style='margin-top:12px;'>", unsafe_allow_html=True)
+                with st.popover("✏️"):
+                    st.markdown(f"### ✏️ {esc(m['name'])} bearbeiten")
+                    a, b = st.columns(2)
+                    nr = a.selectbox("Rang", RANKS, index=RANKS.index(m["rank"]) if m["rank"] in RANKS else 0, key=f"r{m['id']}")
+                    ns = b.selectbox("Status", MEMBER_STATUS, index=MEMBER_STATUS.index(m["status"]) if m["status"] in MEMBER_STATUS else 0, key=f"s{m['id']}")
+                    if st.button("💾 Speichern", key=f"sv{m['id']}"):
+                        update("members", m["id"], f"{m['name']}: {nr}/{ns}", rank=nr, status=ns)
+                    st.markdown("---")
+                    st.markdown("**Aus dem Team entfernen**")
+                    why = st.text_input("Grund (Pflicht)", key=f"why{m['id']}")
+                    if st.button("🚪 Entfernen & archivieren", key=f"rm{m['id']}"):
+                        if not why.strip(): st.warning("Bitte einen Grund angeben.")
+                        else:
+                            with edit(f"{m['name']} aus dem Team entfernt") as d:
+                                d["members"] = [x for x in d["members"] if x["id"] != m["id"]]
+                                d["archive"].append({"id": uid(), "name": m["name"], "discord_id": m.get("discord_id", "-"),
+                                                     "rank": m["rank"], "joined": m.get("joined", ""),
+                                                     "removed": date.today().isoformat(), "reason": why.strip(),
+                                                     "removed_by": user["username"]})
+                            st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
         else:
-            card_inner = (f"<div style='display:flex;justify-content:space-between;align-items:center;width:100%'>"
-                          f"<div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
-                          f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
-                          f"<div>{badge(m['rank'])}</div></div>")
-            show(card_inner)
-        st.markdown("</div>", unsafe_allow_html=True)
+            show(card_content, "member-card")
 
 # --- EHEMALIGE ---
 elif key == "archive":
