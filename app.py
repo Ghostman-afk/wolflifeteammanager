@@ -43,8 +43,11 @@ APP_ROLES = {"Supporter (Bewerbung)": "Test-Supporter", "Moderator (Bewerbung)":
              "Administrator (Bewerbung)": "Test-Administrator"}
 PRIOS = ["Hoch", "Mittel", "Niedrig"]
 PERM_OPTS = ["full", "readonly", "hidden"]
+STATUS_COL = {"Aktiv": "#22C55E", "Probezeit": "#F59E0B", "Abgemeldet": "#9CA3AF"}
+PRIO_COL = {"Hoch": "#EF4444", "Mittel": "#F59E0B", "Niedrig": "#22C55E"}
 TABS = [
-    ("dashboard", "📊 Dashboard"), ("team", "👥 Team-Übersicht"), ("applicants", "📋 Bewerber"),
+    ("dashboard", "📊 Dashboard"), ("team", "👥 Team-Übersicht"), ("archive", "🗄️ Ehemalige"),
+    ("applicants", "📋 Bewerber"),
     ("warnings", "⚠️ Verwarnungen"), ("absences", "📅 Abmeldungen"), ("tasks", "✅ Aufgaben"),
     ("protocols", "📝 Protokolle"), ("notes", "📌 Notizen"), ("settings", "⚙️ Einstellungen"),
     ("accounts", "🔑 Benutzer & Rechte"),
@@ -61,6 +64,10 @@ def rank_color(r):
 
 
 def uid(): return uuid.uuid4().hex
+
+
+def chip(text, color):
+    return f"<span class='chip' style='color:{color};border-color:{color}'>{esc(text)}</span>"
 
 
 def badge(r):
@@ -84,7 +91,7 @@ def _fails(): return {}
 
 
 DEFAULTS = {"members": [], "applicants": [], "warnings": [], "absences": [], "tasks": [],
-            "protocols": [], "notes": "", "users": [], "log": [], "settings": {}}
+            "protocols": [], "notes": "", "users": [], "log": [], "settings": {}, "archive": []}
 
 
 def load_data():
@@ -202,6 +209,20 @@ input,textarea,select,div[data-baseweb=input],div[data-baseweb=select],div[data-
 li[role=option]:hover{background:@ACCENT!important}
 .stButton>button,[data-testid=stFormSubmitButton] button,button[kind=secondaryFormSubmit]{background:@ACCENT!important;color:#fff!important;border:none!important;border-radius:8px!important;font-weight:600!important}
 .stButton>button:hover,[data-testid=stFormSubmitButton] button:hover{background:@ACCENT_HOVER!important}
+#MainMenu,footer{visibility:hidden}
+.block-container{padding-top:2rem;max-width:1400px}
+h1{font-weight:800!important;letter-spacing:-.5px;border-bottom:3px solid @ACCENT;display:inline-block;padding-bottom:6px;margin-bottom:.5rem!important}
+.content-box{border-left:4px solid @ACCENT;transition:transform .15s,box-shadow .15s}
+.content-box:hover{transform:translateY(-1px);box-shadow:0 8px 16px rgba(0,0,0,.35)}
+.metric-card{border-top:3px solid @ACCENT;background:linear-gradient(160deg,@BG_CARD,@BG_SIDEBAR)}
+.metric-value{font-size:34px!important}
+.chip{border:1px solid;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+.stButton>button,[data-testid=stFormSubmitButton] button{transition:all .15s}
+.stButton>button:hover{transform:translateY(-1px)}
+[data-testid=stSidebar] .stRadio div[role=radiogroup]>label{padding:8px 12px!important;border-radius:10px;transition:background .15s}
+[data-testid=stSidebar] .stRadio div[role=radiogroup]>label:hover{background:@BG_CARD}
+[data-testid=stSidebar] .stRadio div[role=radiogroup]>label:has(input:checked){background:@BG_CARD;border-left:3px solid @ACCENT}
+::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:@BG_INPUT;border-radius:4px}
 """
 for k in sorted(t, key=len, reverse=True): CSS = CSS.replace("@" + k, t[k])
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
@@ -266,7 +287,7 @@ def mode_of(key):
     return user["permissions"].get(key, "hidden")
 
 
-st.sidebar.markdown("### 🐺 WOLF LIFE")
+st.sidebar.markdown("<h2 style='margin:0'>🐺 WOLF LIFE</h2><div class='muted'>Team Management Suite</div><br>", unsafe_allow_html=True)
 st.sidebar.markdown(f"<span class='muted'>Eingeloggt als:</span><br><strong>{esc(user['username'])}</strong>",
                     unsafe_allow_html=True)
 if st.sidebar.button("🔒 Abmelden", use_container_width=True):
@@ -284,11 +305,16 @@ def delete_btn(coll, iid, what):
     if can_write and st.button("🗑 Löschen", key=f"del_{coll}_{iid}"): remove(coll, iid, f"{what} gelöscht")
 
 
-member_names = [m["name"] for m in data["members"]]
+member_names = [m["name"] for m in sorted(data["members"], key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99)]
+rank_of = {m["name"]: m["rank"] for m in data["members"]}
+
+
+def mlabel(n): return f"{n} ({rank_of[n]})" if n in rank_of else n
 
 # --- DASHBOARD ---
 if key == "dashboard":
     st.title("📊 Dashboard & Live-Statistiken")
+    st.caption(f"Willkommen zurück, {user['username']}! Heute ist der {date.today().strftime('%d.%m.%Y')}.")
     open_apps = sum(a.get("status") not in ("Angenommen", "Abgelehnt") for a in data["applicants"])
     open_tasks = sum(x.get("status") != "Erledigt" for x in data["tasks"])
     stats = [("Teammitglieder", len(data["members"])), ("Offene Bewerbungen", open_apps),
@@ -299,8 +325,8 @@ if key == "dashboard":
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("🛡️ Rang-Verteilung")
-        rows = "".join(f"<div style='margin-bottom:6px'>{badge(r)} <strong>× {n}</strong></div>"
-                       for r in RANKS if (n := sum(m["rank"] == r for m in data["members"])))
+        rows = "".join(f"<div style='margin-bottom:10px'>{badge(r)} <strong>× {len(ms)}</strong><div class='muted' style='margin-top:4px'>{', '.join(esc(m['name']) for m in ms)}</div></div>"
+                       for r in RANKS if (ms := [m for m in data["members"] if m["rank"] == r]))
         show(rows or "<span class='muted'>Noch keine Teammitglieder eingetragen.</span>")
     with c2:
         st.subheader("📅 Aktuelle Abmeldungen")
@@ -310,9 +336,23 @@ if key == "dashboard":
             except Exception: return True
 
         act = [a for a in data["absences"] if still_active(a)][-6:]
-        show("".join(f"<div><strong>{esc(a['name'])}</strong> ({fmt(a['from_date'])} ➔ {fmt(a['to_date'])}): "
+        show("".join(f"<div><strong>{esc(mlabel(a['name']))}</strong> ({fmt(a['from_date'])} ➔ {fmt(a['to_date'])}): "
                      f"<em>{esc(a['reason'])}</em></div>" for a in act)
              or "<span class='muted'>Keine aktuellen Abmeldungen.</span>")
+
+    c3, c4 = st.columns(2)
+    with c3:
+        st.subheader("✅ Offene Aufgaben")
+        ot = sorted([x for x in data["tasks"] if x["status"] != "Erledigt"],
+                    key=lambda x: PRIOS.index(x["priority"]) if x["priority"] in PRIOS else 9)[:6]
+        show("".join(f"<div style='margin-bottom:6px'>{chip(x['priority'], PRIO_COL.get(x['priority'], '#9CA3AF'))} {esc(x['title'])} "
+                     f"<span class='muted'>– {esc(x['assignee'])}</span></div>" for x in ot)
+             or "<span class='muted'>Keine offenen Aufgaben. 🎉</span>")
+    with c4:
+        st.subheader("🧪 In der Probezeit")
+        pm = [m for m in data["members"] if m["status"] == "Probezeit"]
+        show("".join(f"<div style='margin-bottom:6px'><strong>{esc(m['name'])}</strong> {badge(m['rank'])}</div>" for m in pm)
+             or "<span class='muted'>Niemand in der Probezeit.</span>")
 
 # --- TEAM ---
 elif key == "team":
@@ -343,8 +383,8 @@ elif key == "team":
     sf = f2.selectbox("Status", ["Alle"] + MEMBER_STATUS)
     shown = [m for m in data["members"] if q in m["name"].lower() and sf in ("Alle", m["status"])]
     for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
-        show(f"<div style='display:flex;justify-content:space-between'><div><strong>{esc(m['name'])}</strong><br>"
-             f"<span class='muted'>ID: {esc(m['discord_id'])} | Status: {esc(m['status'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
+        show(f"<div style='display:flex;justify-content:space-between'><div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
+             f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
              f"<div>{badge(m['rank'])}</div></div>")
         if can_write:
             with st.expander(f"✏️ {m['name']} bearbeiten"):
@@ -353,7 +393,33 @@ elif key == "team":
                 ns = b.selectbox("Status", MEMBER_STATUS, index=MEMBER_STATUS.index(m["status"]) if m["status"] in MEMBER_STATUS else 0, key=f"s{m['id']}")
                 if st.button("💾 Speichern", key=f"sv{m['id']}"):
                     update("members", m["id"], f"{m['name']}: {nr}/{ns}", rank=nr, status=ns)
-                delete_btn("members", m["id"], f"Mitglied {m['name']}")
+                st.markdown("**Aus dem Team entfernen**")
+                why = st.text_area("Grund (Pflicht)", key=f"why{m['id']}", height=80)
+                if st.button("🚪 Entfernen & archivieren", key=f"rm{m['id']}"):
+                    if not why.strip(): st.warning("Bitte einen Grund angeben.")
+                    else:
+                        with edit(f"{m['name']} aus dem Team entfernt") as d:
+                            d["members"] = [x for x in d["members"] if x["id"] != m["id"]]
+                            d["archive"].append({"id": uid(), "name": m["name"], "discord_id": m.get("discord_id", "-"),
+                                                 "rank": m["rank"], "joined": m.get("joined", ""),
+                                                 "removed": date.today().isoformat(), "reason": why.strip(),
+                                                 "removed_by": user["username"]})
+                        st.rerun()
+
+# --- EHEMALIGE ---
+elif key == "archive":
+    st.title("🗄️ Ehemalige Teammitglieder")
+    st.caption("Hier steht, wer aus dem Team entfernt wurde und warum.")
+    qa = st.text_input("🔍 Ehemalige suchen...").lower()
+    items = [a for a in data["archive"] if qa in a["name"].lower()]
+    if not items: st.info("Keine Einträge vorhanden.")
+    for a in reversed(items):
+        show(f"<div style='display:flex;justify-content:space-between'><div><strong>{esc(a['name'])}</strong><br>"
+             f"<span class='muted'>ID: {esc(a['discord_id'])} | Im Team seit: {fmt(a['joined'])}</span></div>"
+             f"<div>{badge(a['rank'])}</div></div>"
+             f"<div style='margin-top:12px'><strong>Entfernt am {fmt(a['removed'])}</strong> von {esc(a['removed_by'])}</div>"
+             f"<div style='white-space:pre-wrap;margin-top:4px'>{esc(a['reason'])}</div>")
+        delete_btn("archive", a["id"], f"Archiv-Eintrag {a['name']}")
 
 # --- BEWERBER ---
 elif key == "applicants":
@@ -374,9 +440,11 @@ elif key == "applicants":
                         st.rerun()
                     else: st.warning("Bitte einen Namen eingeben.")
     for ap in reversed(data["applicants"]):
+        past = [a for a in data["archive"] if a["name"].lower() == ap["name"].lower()]
+        hint = "".join(f"<div style='color:#EF4444;margin-top:6px'>⚠️ Ehemaliges Mitglied – entfernt am {fmt(a['removed'])}: {esc(a['reason'])}</div>" for a in past)
         note = f"<p><em>Notiz: {esc(ap['notes'])}</em></p>" if ap.get("notes") else ""
         show(f"<h3>{esc(ap['name'])} <span style='font-size:14px;color:{t['ACCENT']}'>({esc(ap['status'])})</span></h3>"
-             f"<p><strong>Rolle:</strong> {esc(ap['role'])} | <strong>Datum:</strong> {fmt(ap['date'])}</p>{note}")
+             f"<p><strong>Rolle:</strong> {esc(ap['role'])} | <strong>Datum:</strong> {fmt(ap['date'])}</p>{note}{hint}")
         if can_write:
             with st.expander(f"✏️ {ap['name']} bearbeiten"):
                 ns = st.selectbox("Status", APP_STATUS, index=APP_STATUS.index(ap["status"]) if ap["status"] in APP_STATUS else 0, key=f"as{ap['id']}")
@@ -399,7 +467,7 @@ elif key == "warnings":
             if not member_names: st.info("Zuerst Teammitglieder anlegen.")
             else:
                 with st.form("add_warn", clear_on_submit=True):
-                    wm = st.selectbox("Mitglied", member_names)
+                    wm = st.selectbox("Mitglied", member_names, format_func=mlabel)
                     wl = st.selectbox("Stufe", ["Mündliche Verwarnung", "1. Verwarnung (Strike 1)", "2. Verwarnung (Strike 2)", "Letzte Warnung (Strike 3)"])
                     wr = st.text_input("Grund")
                     if st.form_submit_button("Eintragen", use_container_width=True):
@@ -410,7 +478,7 @@ elif key == "warnings":
                             st.rerun()
                         else: st.warning("Bitte einen Grund angeben.")
     for w in reversed(data["warnings"]):
-        show(f"<strong>{esc(w['member'])}</strong> | <code>{esc(w['level'])}</code> (Von: {esc(w['issuer'])}, {fmt(w.get('date'))})"
+        show(f"<strong>{esc(mlabel(w['member']))}</strong> | {chip(w['level'], '#EF4444' if 'Strike 3' in w['level'] else '#F97316' if 'Strike' in w['level'] else '#EAB308')} (Von: {esc(w['issuer'])}, {fmt(w.get('date'))})"
              f"<br>Grund: {esc(w['reason'])}")
         delete_btn("warnings", w["id"], "Verwarnung")
 
@@ -422,7 +490,7 @@ elif key == "absences":
             if not member_names: st.info("Zuerst Teammitglieder anlegen.")
             else:
                 with st.form("add_abs", clear_on_submit=True):
-                    am = st.selectbox("Mitglied", member_names)
+                    am = st.selectbox("Mitglied", member_names, format_func=mlabel)
                     c1, c2 = st.columns(2)
                     af = c1.date_input("Von", value=date.today(), format="DD.MM.YYYY")
                     at = c2.date_input("Bis", value=date.today(), format="DD.MM.YYYY")
@@ -435,7 +503,7 @@ elif key == "absences":
                                                       "to_date": at.isoformat(), "reason": ar})
                             st.rerun()
     for a in reversed(data["absences"]):
-        show(f"<strong>{esc(a['name'])}</strong> ({fmt(a['from_date'])} ➔ {fmt(a['to_date'])})<br>Grund: {esc(a['reason'])}")
+        show(f"<strong>{esc(mlabel(a['name']))}</strong> ({fmt(a['from_date'])} ➔ {fmt(a['to_date'])})<br>Grund: {esc(a['reason'])}")
         delete_btn("absences", a["id"], "Abmeldung")
 
 # --- AUFGABEN ---
@@ -446,7 +514,7 @@ elif key == "tasks":
             with st.form("add_task", clear_on_submit=True):
                 tt = st.text_input("Beschreibung")
                 tp = st.selectbox("Priorität", PRIOS)
-                who = st.multiselect("Zuständig", member_names)
+                who = st.multiselect("Zuständig", member_names, format_func=mlabel)
                 if st.form_submit_button("Erstellen", use_container_width=True):
                     if tt.strip():
                         with edit("Aufgabe erstellt") as d:
@@ -457,8 +525,9 @@ elif key == "tasks":
     order = lambda x: (x["status"] == "Erledigt", PRIOS.index(x["priority"]) if x["priority"] in PRIOS else 9)
     for x in sorted(data["tasks"], key=order):
         done = x["status"] == "Erledigt"
+        who_txt = ", ".join(mlabel(n.strip()) for n in x["assignee"].split(","))
         title = f"<s>{esc(x['title'])}</s>" if done else esc(x["title"])
-        show(f"<strong>{title}</strong> (Prio: {esc(x['priority'])})<br>Zuständig: {esc(x['assignee'])} | Status: {esc(x['status'])}")
+        show(f"{chip(x['priority'], PRIO_COL.get(x['priority'], '#9CA3AF'))} <strong>{title}</strong><br>Zuständig: {esc(who_txt)} | Status: {esc(x['status'])}")
         if can_write:
             a, b, _ = st.columns([1, 1, 4])
             if a.button("↩ Wieder öffnen" if done else "✔ Erledigt", key=f"tg{x['id']}"):
