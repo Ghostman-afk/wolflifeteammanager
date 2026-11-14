@@ -231,10 +231,6 @@ CSS = """
 .block-container{padding-top:2rem;max-width:1400px}
 #MainMenu,footer{visibility:hidden}
 [data-testid=stSidebar]{background:linear-gradient(180deg,@BG_SIDEBAR,@BG_MAIN);border-right:1px solid rgba(@ACCENT_RGB,.35);box-shadow:4px 0 28px rgba(@ACCENT_RGB,.08);min-width:280px!important}
-[data-testid=stSidebar] .stRadio label{font-size:16px!important;font-weight:600!important}
-[data-testid=stSidebar] .stRadio div[role=radiogroup]>label{padding:8px 12px!important;border-radius:4px 12px 4px 12px;transition:background .15s}
-[data-testid=stSidebar] .stRadio div[role=radiogroup]>label:hover{background:@BG_CARD}
-[data-testid=stSidebar] .stRadio div[role=radiogroup]>label:has(input:checked){background:linear-gradient(90deg,rgba(@ACCENT_RGB,.30),@BG_CARD);border-left:3px solid @ACCENT}
 h1,h2,h3,h4,h5,h6,p,label,span:not([style*="color"]){color:@TEXT_MAIN!important}
 .stApp h1{font-weight:900!important;letter-spacing:1px;text-transform:uppercase;text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 24px rgba(@ACCENT_RGB,.55);padding-bottom:8px;border-bottom:3px solid @ACCENT;display:inline-block;margin-bottom:.5rem!important}
 .block-container h3::before{content:"◢ ";color:@ACCENT!important;font-size:.8em}
@@ -262,6 +258,21 @@ input:focus,textarea:focus{box-shadow:0 0 0 1px @ACCENT!important}
 li[role=option]:hover{background:@ACCENT!important}
 .stButton>button,[data-testid=stFormSubmitButton] button,[data-testid=stDownloadButton] button,button[kind=secondaryFormSubmit]{background:linear-gradient(180deg,@ACCENT,@ACCENT_HOVER)!important;color:#fff!important;border:none!important;border-radius:4px 12px 4px 12px!important;font-weight:700!important;letter-spacing:.3px;box-shadow:0 2px 10px rgba(@ACCENT_RGB,.35);transition:all .15s}
 .stButton>button:hover,[data-testid=stFormSubmitButton] button:hover,[data-testid=stDownloadButton] button:hover{filter:brightness(1.12);transform:translateY(-1px);box-shadow:0 4px 18px rgba(@ACCENT_RGB,.55)}
+.nav-group{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.2em;color:@TEXT_MUTED!important;margin:20px 0 6px 6px;text-transform:uppercase}
+.nav-group::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(@ACCENT_RGB,.55),transparent)}
+.user-card{display:flex;align-items:center;gap:12px;padding:12px;margin:6px 0 4px;border-radius:6px 16px 6px 16px;background:linear-gradient(135deg,rgba(255,255,255,.06),rgba(255,255,255,0)),@BG_CARD;border:1px solid rgba(@ACCENT_RGB,.30)}
+.avatar{width:42px;height:42px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;color:#fff;background:linear-gradient(135deg,@ACCENT,@ACCENT_HOVER);box-shadow:0 0 14px rgba(@ACCENT_RGB,.5)}
+[data-testid=stSidebar] .stButton>button{background:transparent!important;box-shadow:none!important;border:1px solid transparent!important;border-radius:4px 14px 4px 14px!important;padding:.55rem .9rem!important;transition:all .15s}
+[data-testid=stSidebar] .stButton>button>div{justify-content:flex-start!important;width:100%}
+[data-testid=stSidebar] .stButton>button p{text-align:left!important;color:@TEXT_MUTED!important;font-weight:600!important;font-size:15px!important}
+[data-testid=stSidebar] .stButton>button:hover{background:rgba(@ACCENT_RGB,.13)!important;border-color:rgba(@ACCENT_RGB,.35)!important;transform:translateX(4px);filter:none!important;box-shadow:none!important}
+[data-testid=stSidebar] .stButton>button:hover p{color:@TEXT_MAIN!important}
+[data-testid=stSidebar] button[kind=primary],[data-testid=stSidebar] [data-testid=stBaseButton-primary]{background:linear-gradient(90deg,rgba(@ACCENT_RGB,.45),rgba(@ACCENT_RGB,.06))!important;border-left:4px solid @ACCENT!important;box-shadow:0 0 18px rgba(@ACCENT_RGB,.22)!important}
+[data-testid=stSidebar] button[kind=primary] p,[data-testid=stSidebar] [data-testid=stBaseButton-primary] p{color:#fff!important;font-weight:800!important}
+[data-testid=stSidebar] .st-key-logout button{background:rgba(255,255,255,.05)!important;border:1px solid rgba(255,255,255,.12)!important}
+[data-testid=stSidebar] .st-key-logout button>div{justify-content:center!important}
+[data-testid=stSidebar] .st-key-logout button p{text-align:center!important}
+[data-testid=stSidebar] .st-key-logout button:hover{background:rgba(239,68,68,.25)!important;border-color:#EF4444!important;transform:none}
 ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:@BG_INPUT;border-radius:4px}
 """
 for k in sorted(t, key=len, reverse=True): CSS = CSS.replace("@" + k, t[k])
@@ -328,17 +339,34 @@ def mode_of(key):
 
 st.sidebar.markdown(f"{logo_html(230) or '<h2>🐺 WOLF LIFE</h2>'}<div class='tagline' style='text-align:center;font-size:11px;margin:4px 0 14px'>Los Santos · Team Suite</div>",
                     unsafe_allow_html=True)
-st.sidebar.markdown(f"<span class='muted'>Eingeloggt als:</span><br><strong>{esc(user['username'])}</strong>",
+visible = [(k, l) for k, l in TABS if mode_of(k) != "hidden"]
+if ss.get("page") not in [k for k, _ in visible]: ss.page = visible[0][0]
+st.sidebar.markdown(f"<div class='user-card'><div class='avatar'>{esc(user['username'][:1].upper())}</div>"
+                    f"<div><strong>{esc(user['username'])}</strong>"
+                    f"<div class='muted'>{'Administrator' if is_admin else 'Teammitglied'}</div></div></div>",
                     unsafe_allow_html=True)
-if st.sidebar.button("🔒 Abmelden", use_container_width=True):
+counts = {"applicants": sum(x.get("status") not in ("Angenommen", "Abgelehnt") for x in data["applicants"]),
+          "tasks": sum(x.get("status") != "Erledigt" for x in data["tasks"])}
+NAV_GROUPS = [("Übersicht", ["dashboard"]), ("Team", ["team", "archive", "applicants"]),
+              ("Verwaltung", ["warnings", "absences", "tasks", "protocols", "notes"]),
+              ("System", ["settings", "accounts"])]
+for grp, grp_keys in NAV_GROUPS:
+    items = [(k, l) for k, l in visible if k in grp_keys]
+    if not items: continue
+    st.sidebar.markdown(f"<div class='nav-group'>{grp}</div>", unsafe_allow_html=True)
+    for k, l in items:
+        n = counts.get(k, 0)
+        if st.sidebar.button(f"{l}  ·  {n}" if n else l, key=f"nav_{k}",
+                             type="primary" if ss.page == k else "secondary", use_container_width=True):
+            ss.page = k
+            st.rerun()
+key = ss.page
+can_write = mode_of(key) == "full"
+if not can_write: st.sidebar.markdown(chip("👁 Nur-Lesen", "#F59E0B"), unsafe_allow_html=True)
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
+if st.sidebar.button("🔒 Abmelden", key="logout", use_container_width=True):
     ss.user = None
     st.rerun()
-st.sidebar.markdown("---")
-visible = [(k, l) for k, l in TABS if mode_of(k) != "hidden"]
-label = st.sidebar.radio("Navigation", [l for _, l in visible])
-key = next(k for k, l in visible if l == label)
-can_write = mode_of(key) == "full"
-if not can_write: st.sidebar.info("ℹ️ Modus: Nur-Lesen")
 
 
 def delete_btn(coll, iid, what):
