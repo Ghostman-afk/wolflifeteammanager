@@ -111,7 +111,7 @@ if current_theme_name not in THEMES:
     current_theme_name = "1. Wolf Life Dark (Rot-Dunkel Standard)"
 t = THEMES[current_theme_name]
 
-# --- KOMPLETTES CSS (EXPANDER, INPUTS & PASSWORT-AUGE 100% DUNKEL) ---
+# --- CSS: DESIGN & EXPANDER ---
 st.markdown(f"""
 <style>
     .stApp {{
@@ -141,7 +141,7 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
     
-    /* EXPANDER FIX: Dauerhaft dunkel-grau */
+    /* Expander dauerhaft dunkel-grau */
     [data-testid="stExpander"],
     [data-testid="stExpander"] details,
     [data-testid="stExpander"] details[open],
@@ -169,7 +169,6 @@ st.markdown(f"""
         font-weight: 600 !important;
     }}
 
-    /* Statistik-Karten & Inhaltsboxen */
     .metric-card, .content-box {{
         background-color: {t["BG_CARD"]};
         border: 1px solid rgba(255, 255, 255, 0.06);
@@ -191,7 +190,6 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
 
-    /* Notifications */
     [data-testid="stNotification"] {{
         background-color: {t["BG_CARD"]} !important;
         color: {t["TEXT_MAIN"]} !important;
@@ -202,7 +200,7 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
 
-    /* INPUTS & PASSWORT-AUGE: Weissen Kasten komplett neutralisieren */
+    /* Inputs & Passwort-Auge */
     input, textarea, select, 
     div[data-baseweb="input"], div[data-baseweb="select"], 
     div[data-baseweb="base-input"], span[data-baseweb="tag"] {{
@@ -221,7 +219,6 @@ st.markdown(f"""
         border-radius: 8px !important;
     }}
     
-    /* Passwort-Auge Button Box transparent machen */
     .stTextInput button, [data-testid="stTextInput"] button,
     div[data-baseweb="input"] > div:last-child {{
         background-color: transparent !important;
@@ -233,7 +230,6 @@ st.markdown(f"""
         color: {t["TEXT_MUTED"]} !important;
     }}
 
-    /* Buttons */
     .stButton>button, button[kind="secondaryFormSubmit"], button[kind="primary"] {{
         background-color: {t["ACCENT"]} !important;
         color: #FFFFFF !important;
@@ -257,7 +253,68 @@ if "logged_in" not in st.session_state:
     st.session_state.is_superadmin = False
     st.session_state.permissions = {}
 
-# --- LOGIN SCREEN ---
+tabs_meta = [
+    ("dashboard", "📊 Dashboard"),
+    ("team", "👥 Team-Übersicht"),
+    ("applicants", "📋 Bewerber"),
+    ("warnings", "⚠️ Verwarnungen"),
+    ("absences", "📅 Abmeldungen"),
+    ("tasks", "✅ Aufgaben"),
+    ("protocols", "📝 Protokolle"),
+    ("notes", "📌 Notizen"),
+    ("settings", "⚙️ Einstellungen"),
+    ("accounts", "🔑 Benutzer & Rechte")
+]
+
+# --- SIDEBAR WIRD JETZT IMMER GEZEIGT (FEST & SICHER) ---
+st.sidebar.markdown("### 🐺 WOLF LIFE")
+
+if st.session_state.logged_in:
+    st.sidebar.markdown(f"<span style='color:{t['TEXT_MUTED']}; font-size:14px;'>Eingeloggt als:</span><br><strong style='font-size:16px;'>{st.session_state.username}</strong>", unsafe_allow_html=True)
+    st.sidebar.markdown("<br>", unsafe_allow_html=True)
+    
+    if st.sidebar.button("🔒 Abmelden", use_container_width=True):
+        st.session_state.logged_in = False
+        st.rerun()
+
+    st.sidebar.markdown("---")
+
+    available_tabs = []
+    tab_keys = []
+    tab_modes = []
+
+    for key, label in tabs_meta:
+        mode = "full" if st.session_state.is_superadmin else st.session_state.permissions.get(key, "full")
+        if key == "settings": mode = "full"
+        if mode != "hidden":
+            available_tabs.append(label)
+            tab_keys.append(key)
+            tab_modes.append(mode)
+
+    selected_tab_label = st.sidebar.radio("Navigation", available_tabs)
+    current_index = available_tabs.index(selected_tab_label)
+    active_key = tab_keys[current_index]
+    active_mode = tab_modes[current_index]
+
+    is_readonly = (active_mode == "readonly")
+    if is_readonly:
+        st.sidebar.info("ℹ️ Modus: Nur-Lesen")
+else:
+    st.sidebar.markdown("<span style='color:#9CA3AF;'>Bitte zuerst anmelden.</span>", unsafe_allow_html=True)
+    active_key = "login"
+
+def check_write():
+    if is_readonly and not st.session_state.is_superadmin:
+        st.warning("Zugriff verweigert: Account hat nur Lese-Rechte in diesem Tab.")
+        return False
+    return True
+
+def get_member_choices():
+    members = data.get("members", [])
+    if not members: return ["Kein Mitglied eingetragen"]
+    return [f"{m['name']} ({m['rank']})" for m in members]
+
+# --- LOGIN SCREEN (FALLS NICHT EINGELOGGT) ---
 if not st.session_state.logged_in:
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.2, 1])
@@ -290,70 +347,6 @@ if not st.session_state.logged_in:
                     st.error("Falscher Benutzername oder falsches Passwort!")
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
-
-# --- SIDEBAR ---
-st.sidebar.markdown("### 🐺 WOLF LIFE")
-st.sidebar.markdown(f"<span style='color:{t['TEXT_MUTED']}; font-size:14px;'>Eingeloggt als:</span><br><strong style='font-size:16px;'>{st.session_state.username}</strong>", unsafe_allow_html=True)
-st.sidebar.markdown("<br>", unsafe_allow_html=True)
-
-if st.sidebar.button("🔒 Abmelden", use_container_width=True):
-    st.session_state.logged_in = False
-    st.rerun()
-
-st.sidebar.markdown("---")
-
-tabs_meta = [
-    ("dashboard", "📊 Dashboard"),
-    ("team", "👥 Team-Übersicht"),
-    ("applicants", "📋 Bewerber"),
-    ("warnings", "⚠️ Verwarnungen"),
-    ("absences", "📅 Abmeldungen"),
-    ("tasks", "✅ Aufgaben"),
-    ("protocols", "📝 Protokolle"),
-    ("notes", "📌 Notizen"),
-    ("settings", "⚙️ Einstellungen"),
-    ("accounts", "🔑 Benutzer & Rechte")
-]
-
-available_tabs = []
-tab_keys = []
-tab_modes = []
-
-for key, label in tabs_meta:
-    mode = "full" if st.session_state.is_superadmin else st.session_state.permissions.get(key, "full")
-    if key == "settings": mode = "full"
-    if mode != "hidden":
-        available_tabs.append(label)
-        tab_keys.append(key)
-        tab_modes.append(mode)
-
-selected_tab_label = st.sidebar.radio("Navigation", available_tabs)
-current_index = available_tabs.index(selected_tab_label)
-active_key = tab_keys[current_index]
-active_mode = tab_modes[current_index]
-
-is_readonly = (active_mode == "readonly")
-if is_readonly:
-    st.sidebar.info("ℹ️ Modus: Nur-Lesen")
-
-def check_write():
-    if is_readonly and not st.session_state.is_superadmin:
-        st.warning("Zugriff verweigert: Account hat nur Lese-Rechte in diesem Tab.")
-        return False
-    return True
-
-def get_member_choices():
-    members = data.get("members", [])
-    if not members: return ["Kein Mitglied eingetragen"]
-    return [f"{m['name']} ({m['rank']})" for m in members]
-
-# --- HILFS-BUTTON FÜR EINGEKLAPPTE SIDEBAR ---
-# Falls die Sidebar minimiert wurde, hilft dieser Shortcut-Text am oberen Bildschirmrand
-st.markdown("""
-<div style="font-size: 11px; color: #71717A; margin-bottom: -15px;">
-    💡 <i>Tipp: Falls die linke Leiste eingeklappt ist, drücke einfach <b>Strg + Shift + M</b> auf deiner Tastatur, um sie wieder einzublenden.</i>
-</div>
-""", unsafe_allow_html=True)
 
 # --- 1. DASHBOARD ---
 if active_key == "dashboard":
