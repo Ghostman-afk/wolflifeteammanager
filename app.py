@@ -44,7 +44,8 @@ APP_STATUS = ["Bewerbung eingegangen", "Im Testgespräch", "Testphase läuft", "
 APP_ROLES = {"Supporter (Bewerbung)": "Test-Supporter", "Moderator (Bewerbung)": "Test-Moderator",
              "Administrator (Bewerbung)": "Test-Administrator"}
 PRIOS = ["Hoch", "Mittel", "Niedrig"]
-PERM_OPTS = ["full", "readonly", "hidden"]
+PERM_OPTS = ["full", "readonly", "absence_own", "hidden"]
+PERM_LABELS = {"full": "Vollzugriff", "readonly": "Nur-Lesen", "absence_own": "Eigene Abmeldung", "hidden": "Versteckt"}
 STATUS_COL = {"Aktiv": "#22C55E", "Probezeit": "#F59E0B", "Abgemeldet": "#9CA3AF"}
 PRIO_COL = {"Hoch": "#EF4444", "Mittel": "#F59E0B", "Niedrig": "#22C55E"}
 TABS = [
@@ -379,8 +380,10 @@ for grp, grp_keys in NAV_GROUPS:
             ss.page = k
             st.rerun()
 key = ss.page
-can_write = mode_of(key) == "full"
-if not can_write: st.sidebar.markdown(chip("👁 Nur-Lesen", "#F59E0B"), unsafe_allow_html=True)
+perm_mode = mode_of(key)
+can_write = perm_mode in ("full", "absence_own") if key == "absences" else (perm_mode == "full")
+if perm_mode == "readonly": st.sidebar.markdown(chip("👁 Nur-Lesen", "#F59E0B"), unsafe_allow_html=True)
+elif perm_mode == "absence_own": st.sidebar.markdown(chip("👤 Nur eigene Abmeldungen", "#3B82F6"), unsafe_allow_html=True)
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 if st.sidebar.button("🔒 Abmelden", key="logout", use_container_width=True):
     ss.user = None
@@ -500,7 +503,7 @@ elif key == "team":
                                                      "rank": m["rank"], "joined": m.get("joined", ""),
                                                      "removed": date.today().isoformat(), "reason": why.strip(),
                                                      "removed_by": user["username"]})
-                            st.rerun()
+                        st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
         else:
             show(card_content, "member-card")
@@ -584,12 +587,19 @@ elif key == "warnings":
 # --- ABMELDUNGEN ---
 elif key == "absences":
     st.title("📅 Abmeldungen & Urlaub")
-    if can_write:
+    if perm_mode in ("full", "absence_own"):
         with st.expander("➕ Abmeldung erfassen"):
             if not member_names: st.info("Zuerst Teammitglieder anlegen.")
             else:
                 with st.form("add_abs", clear_on_submit=True):
-                    am = st.selectbox("Mitglied", member_names, format_func=mlabel)
+                    if perm_mode == "absence_own":
+                        # Nur eigener Name wählbar (oder Name der dem Account entspricht / manuell wählbar aus Mitgliedern)
+                        match_m = next((m for m in member_names if m.lower() == user["username"].lower()), member_names[0] if member_names else "")
+                        am = st.selectbox("Mitglied", [match_m] if match_m else member_names, format_func=mlabel)
+                        st.caption(f"ℹ️ Du kannst als '{user['username']}' nur deine eigene Abmeldung eintragen.")
+                    else:
+                        am = st.selectbox("Mitglied", member_names, format_func=mlabel)
+                    
                     c1, c2 = st.columns(2)
                     af = c1.date_input("Von", value=date.today(), format="DD.MM.YYYY")
                     at = c2.date_input("Bis", value=date.today(), format="DD.MM.YYYY")
@@ -601,9 +611,14 @@ elif key == "absences":
                                 d["absences"].append({"id": uid(), "name": am, "from_date": af.isoformat(),
                                                       "to_date": at.isoformat(), "reason": ar})
                             st.rerun()
+                            
     for a in reversed(data["absences"]):
         show(f"<strong>{esc(mlabel(a['name']))}</strong> ({fmt(a['from_date'])} ➔ {fmt(a['to_date'])})<br>Grund: {esc(a['reason'])}")
-        delete_btn("absences", a["id"], "Abmeldung")
+        # Lösch-Logik für Abmeldungen: Admins (full) dürfen alles löschen, absence_own nur wenn der Name zum User passt
+        can_del_this = (perm_mode == "full") or (perm_mode == "absence_own" and a['name'].lower() == user['username'].lower())
+        if can_del_this:
+            if st.button("🗑 Löschen", key=f"del_abs_{a['id']}"): 
+                remove("absences", a["id"], "Abmeldung gelöscht")
 
 # --- AUFGABEN ---
 elif key == "tasks":
@@ -693,7 +708,7 @@ elif key == "accounts":
             up = st.text_input("Start-Passwort (min. 10 Zeichen)", type="password")
             ua = st.checkbox("Administrator (voller Zugriff)")
             cols = st.columns(3)
-            perms = {k: cols[i % 3].selectbox(l, ["full", "readonly", "hidden"], index=1, key=f"p_{k}")
+            perms = {k: cols[i % 3].selectbox(l, PERM_OPTS, format_func=lambda x: PERM_LABELS[x], index=1, key=f"p_{k}")
                      for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings")}
             if st.form_submit_button("Anlegen", use_container_width=True):
                 if len(un.strip()) < 3 or len(up) < 10: st.error("Benutzername min. 3, Passwort min. 10 Zeichen.")
@@ -704,7 +719,6 @@ elif key == "accounts":
                     st.rerun()
     for u in data["users"]:
         with st.expander(f"{u['username']} {'(Administrator)' if u.get('is_admin') else ''}"):
-            # NEU: Benutzername ändern
             new_uname = st.text_input("Benutzername ändern", value=u["username"], key=f"nu_{u['username']}")
             if st.button("✏️ Namen speichern", key=f"su_{u['username']}"):
                 new_clean = new_uname.strip()
@@ -717,7 +731,6 @@ elif key == "accounts":
                         for x in d["users"]:
                             if x["username"] == u["username"]:
                                 x["username"] = new_clean
-                    # Falls man den eigenen Namen ändert, Session anpassen
                     if ss.user["username"] == u["username"]:
                         ss.user["username"] = new_clean
                     st.success("Benutzername erfolgreich aktualisiert!")
@@ -729,7 +742,8 @@ elif key == "accounts":
                               disabled=is_self, key=f"adm_{u['username']}")
             cur = u.get("permissions") or {}
             pc = st.columns(3)
-            newp = {k: pc[i % 3].selectbox(l, PERM_OPTS, index=PERM_OPTS.index(cur.get(k, "hidden")) if cur.get(k, "hidden") in PERM_OPTS else 2,
+            newp = {k: pc[i % 3].selectbox(l, PERM_OPTS, format_func=lambda x: PERM_LABELS[x],
+                                           index=PERM_OPTS.index(cur.get(k, "hidden")) if cur.get(k, "hidden") in PERM_OPTS else 2,
                                            key=f"ep_{u['username']}_{k}")
                     for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings")}
             if st.button("💾 Rechte speichern", key=f"sp_{u['username']}"):
