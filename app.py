@@ -101,7 +101,7 @@ def chip(text, color):
 
 def badge(r):
     c = rank_color(r)
-    return (f"<span style='color:{c};border:1px solid {c};border-radius:999px;padding:2px 10px;"
+    return (f"<span class='rank-badge' style='color:{c};border:1px solid {c};border-radius:999px;padding:2px 10px;"
             f"font-weight:bold;font-size:13px'>{'👑 ' if r == 'Owner' else ''}{esc(r)}</span>")
 
 
@@ -274,10 +274,37 @@ li[role=option]:hover{background:@ACCENT!important}
 [data-testid=stSidebar] .st-key-logout button p{text-align:center!important}
 [data-testid=stSidebar] .st-key-logout button:hover{background:rgba(239,68,68,.25)!important;border-color:#EF4444!important;transform:none}
 .member-card{min-height:104px}
-[class*="st-key-edit_"]{align-items:flex-end;margin-top:-112px;margin-bottom:66px;padding-right:130px;position:relative;z-index:3}
-[class*="st-key-edit_"] button{width:30px;height:30px;min-height:30px!important;padding:0!important;border-radius:50%!important;background:rgba(255,255,255,.07)!important;border:1px solid rgba(@ACCENT_RGB,.55)!important;box-shadow:none!important;transition:all .15s}
-[class*="st-key-edit_"] button:hover{background:rgba(@ACCENT_RGB,.30)!important;transform:scale(1.1)}
-[class*="st-key-edit_"] button svg{display:none}
+
+/* --- FIX FÜR DEN BEARBEITUNGS-STIFT (TEAM-ÜBERSICHT) --- */
+.member-row { position: relative; margin-bottom: 10px; }
+[class*="st-key-edit_"] {
+    position: absolute;
+    right: 20px;
+    top: 26px;
+    z-index: 10;
+}
+[class*="st-key-edit_"] button {
+    width: 32px;
+    height: 32px;
+    min-height: 32px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    background: rgba(255,255,255,.07) !important;
+    border: 1px solid rgba(@ACCENT_RGB,.55) !important;
+    box-shadow: none !important;
+    transition: all .15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+[class*="st-key-edit_"] button:hover {
+    background: rgba(@ACCENT_RGB,.30) !important;
+    transform: scale(1.1);
+}
+[class*="st-key-edit_"] button svg {
+    display: none;
+}
+
 [data-testid=stPopoverBody]{min-width:360px;background:@BG_CARD!important;color:@TEXT_MAIN!important;border:1px solid rgba(@ACCENT_RGB,.35)!important;border-radius:6px 18px 6px 18px!important}
 div[data-baseweb=select] div{background:@BG_INPUT!important;color:@TEXT_MAIN!important}
 div[data-baseweb=select] svg{fill:@TEXT_MAIN!important}
@@ -458,14 +485,13 @@ elif key == "team":
     q = f1.text_input("🔍 Mitglied suchen...").lower()
     sf = f2.selectbox("Status", ["Alle"] + MEMBER_STATUS)
     shown = [m for m in data["members"] if q in m["name"].lower() and sf in ("Alle", m["status"])]
-    if can_write and shown:  # Stift sitzt links vom Rang-Badge: Abstand je nach Badge-Breite
-        est = lambda r: int(len(r) * 7.4 + (22 if r == "Owner" else 0) + 26)
-        st.markdown("<style>" + "".join(f".st-key-edit_{m['id']}{{padding-right:{20 + est(m['rank']) + 10}px!important}}"
-                                        for m in shown) + "</style>", unsafe_allow_html=True)
+
     for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
-        show(f"<div style='display:flex;justify-content:space-between'><div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
+        st.markdown(f"<div class='member-row'>", unsafe_allow_html=True)
+        show(f"<div style='display:flex;justify-content:space-between;align-items:center;padding-right:40px;'><div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
              f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
              f"<div>{badge(m['rank'])}</div></div>", "member-card")
+        
         if can_write:
             with st.container(key=f"edit_{m['id']}"), st.popover("✏️"):
                 a, b = st.columns(2)
@@ -485,6 +511,7 @@ elif key == "team":
                                                  "removed": date.today().isoformat(), "reason": why.strip(),
                                                  "removed_by": user["username"]})
                         st.rerun()
+        st.markdown(f"</div>", unsafe_allow_html=True)
 
 # --- EHEMALIGE ---
 elif key == "archive":
