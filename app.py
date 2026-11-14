@@ -14,49 +14,49 @@ st.set_page_config(
 # --- 15 OPTIMIERTE DESIGN-THEMES (FARBVARIANTEN) ---
 THEMES = {
     "1. Wolf Life Dark (Rot-Dunkel Standard)": {
-        "BG_MAIN": "#0D0D11", "BG_SIDEBAR": "#14141A", "BG_CARD": "#1C1C24", "BG_INPUT": "#252530", "ACCENT": "#EF4444", "ACCENT_HOVER": "#DC2626", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#9CA3AF"
+        "BG_MAIN": "#0D0D11", "BG_SIDEBAR": "#14141A", "BG_CARD": "#1C1C24", "BG_INPUT": "#22222D", "ACCENT": "#EF4444", "ACCENT_HOVER": "#DC2626", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#9CA3AF"
     },
     "2. Midnight Blue (Blau-Taktisch)": {
-        "BG_MAIN": "#090D16", "BG_SIDEBAR": "#111827", "BG_CARD": "#1E293B", "BG_INPUT": "#334155", "ACCENT": "#3B82F6", "ACCENT_HOVER": "#2563EB", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#94A3B8"
+        "BG_MAIN": "#090D16", "BG_SIDEBAR": "#111827", "BG_CARD": "#1E293B", "BG_INPUT": "#2A3748", "ACCENT": "#3B82F6", "ACCENT_HOVER": "#2563EB", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#94A3B8"
     },
     "3. Blood Moon (Rot-Karmesin)": {
-        "BG_MAIN": "#120808", "BG_SIDEBAR": "#1F0D0D", "BG_CARD": "#2C1515", "BG_INPUT": "#3D1E1E", "ACCENT": "#EF4444", "ACCENT_HOVER": "#DC2626", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#B89999"
+        "BG_MAIN": "#120808", "BG_SIDEBAR": "#1F0D0D", "BG_CARD": "#2C1515", "BG_INPUT": "#381B1B", "ACCENT": "#EF4444", "ACCENT_HOVER": "#DC2626", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#B89999"
     },
     "4. Cyberpunk Neon (Pink-Violett)": {
-        "BG_MAIN": "#0A0814", "BG_SIDEBAR": "#131022", "BG_CARD": "#1F1A38", "BG_INPUT": "#2D2652", "ACCENT": "#F43F5E", "ACCENT_HOVER": "#E11D48", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#A89EC9"
+        "BG_MAIN": "#0A0814", "BG_SIDEBAR": "#131022", "BG_CARD": "#1F1A38", "BG_INPUT": "#29224A", "ACCENT": "#F43F5E", "ACCENT_HOVER": "#E11D48", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#A89EC9"
     },
     "5. Emerald Syndicate (Grün-Smaragd)": {
-        "BG_MAIN": "#05100C", "BG_SIDEBAR": "#0A1C15", "BG_CARD": "#132E23", "BG_INPUT": "#1E4737", "ACCENT": "#10B981", "ACCENT_HOVER": "#059669", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#9CA3AF"
+        "BG_MAIN": "#05100C", "BG_SIDEBAR": "#0A1C15", "BG_CARD": "#132E23", "BG_INPUT": "#1A3E31", "ACCENT": "#10B981", "ACCENT_HOVER": "#059669", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#9CA3AF"
     },
     "6. Matrix Terminal (Grün-Neon)": {
-        "BG_MAIN": "#030A05", "BG_SIDEBAR": "#07170B", "BG_CARD": "#0F2914", "BG_INPUT": "#173E20", "ACCENT": "#22C55E", "ACCENT_HOVER": "#16A34A", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#9CA3AF"
+        "BG_MAIN": "#030A05", "BG_SIDEBAR": "#07170B", "BG_CARD": "#0F2914", "BG_INPUT": "#14361C", "ACCENT": "#22C55E", "ACCENT_HOVER": "#16A34A", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#9CA3AF"
     },
     "7. Golden Royalty (Gold-Gelb)": {
-        "BG_MAIN": "#12100B", "BG_SIDEBAR": "#1C1912", "BG_CARD": "#2B261A", "BG_INPUT": "#3D3624", "ACCENT": "#EAB308", "ACCENT_HOVER": "#CA8A04", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#B3AB94"
+        "BG_MAIN": "#12100B", "BG_SIDEBAR": "#1C1912", "BG_CARD": "#2B261A", "BG_INPUT": "#363022", "ACCENT": "#EAB308", "ACCENT_HOVER": "#CA8A04", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#B3AB94"
     },
     "8. Purple Haze (Lila-Mystic)": {
-        "BG_MAIN": "#0D0A14", "BG_SIDEBAR": "#161124", "BG_CARD": "#221A38", "BG_INPUT": "#31264F", "ACCENT": "#A855F7", "ACCENT_HOVER": "#9333EA", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#B4ADC9"
+        "BG_MAIN": "#0D0A14", "BG_SIDEBAR": "#161124", "BG_CARD": "#221A38", "BG_INPUT": "#2D2447", "ACCENT": "#A855F7", "ACCENT_HOVER": "#9333EA", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#B4ADC9"
     },
     "9. Steel Gray (Grau-Neutral)": {
-        "BG_MAIN": "#0F0F10", "BG_SIDEBAR": "#18181B", "BG_CARD": "#27272A", "BG_INPUT": "#3F3F46", "ACCENT": "#71717A", "ACCENT_HOVER": "#52525B", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#A1A1AA"
+        "BG_MAIN": "#0F0F10", "BG_SIDEBAR": "#18181B", "BG_CARD": "#27272A", "BG_INPUT": "#333338", "ACCENT": "#71717A", "ACCENT_HOVER": "#52525B", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#A1A1AA"
     },
     "10. Deep Ocean (Blau-Ozean)": {
-        "BG_MAIN": "#060E17", "BG_SIDEBAR": "#0F1E2E", "BG_CARD": "#172F47", "BG_INPUT": "#224566", "ACCENT": "#0EA5E9", "ACCENT_HOVER": "#0284C7", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#93C5FD"
+        "BG_MAIN": "#060E17", "BG_SIDEBAR": "#0F1E2E", "BG_CARD": "#172F47", "BG_INPUT": "#203D5C", "ACCENT": "#0EA5E9", "ACCENT_HOVER": "#0284C7", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#93C5FD"
     },
     "11. Sunset Orange (Orange-Warm)": {
-        "BG_MAIN": "#120B07", "BG_SIDEBAR": "#1F130B", "BG_CARD": "#301D11", "BG_INPUT": "#452A19", "ACCENT": "#F97316", "ACCENT_HOVER": "#EA580C", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#D1B5A3"
+        "BG_MAIN": "#120B07", "BG_SIDEBAR": "#1F130B", "BG_CARD": "#301D11", "BG_INPUT": "#3D2719", "ACCENT": "#F97316", "ACCENT_HOVER": "#EA580C", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#D1B5A3"
     },
     "12. Coffee Dark (Braun-Kaffee)": {
-        "BG_MAIN": "#110C0A", "BG_SIDEBAR": "#1C1411", "BG_CARD": "#2B1E1A", "BG_INPUT": "#3D2B26", "ACCENT": "#D97706", "ACCENT_HOVER": "#B45309", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#C4B5A5"
+        "BG_MAIN": "#110C0A", "BG_SIDEBAR": "#1C1411", "BG_CARD": "#2B1E1A", "BG_INPUT": "#362723", "ACCENT": "#D97706", "ACCENT_HOVER": "#B45309", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#C4B5A5"
     },
     "13. Arctic Frost (Türkis-Eis)": {
-        "BG_MAIN": "#091217", "BG_SIDEBAR": "#0F1E26", "BG_CARD": "#172E3B", "BG_INPUT": "#224354", "ACCENT": "#06B6D4", "ACCENT_HOVER": "#0891B2", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#A5F3FC"
+        "BG_MAIN": "#091217", "BG_SIDEBAR": "#0F1E26", "BG_CARD": "#172E3B", "BG_INPUT": "#1F3D4D", "ACCENT": "#06B6D4", "ACCENT_HOVER": "#0891B2", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#A5F3FC"
     },
     "14. Vampire Rose (Rosa-Beeren)": {
-        "BG_MAIN": "#140A0F", "BG_SIDEBAR": "#210F17", "BG_CARD": "#331824", "BG_INPUT": "#4A2435", "ACCENT": "#FB7185", "ACCENT_HOVER": "#F43F5E", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#E2B8C9"
+        "BG_MAIN": "#140A0F", "BG_SIDEBAR": "#210F17", "BG_CARD": "#331824", "BG_INPUT": "#40202E", "ACCENT": "#FB7185", "ACCENT_HOVER": "#F43F5E", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#E2B8C9"
     },
     "15. Hacker Acid (Limette-Giftgrün)": {
-        "BG_MAIN": "#0E1009", "BG_SIDEBAR": "#171A0F", "BG_CARD": "#252B17", "BG_INPUT": "#374221", "ACCENT": "#84CC16", "ACCENT_HOVER": "#65A30D", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#CBD5E1"
+        "BG_MAIN": "#0E1009", "BG_SIDEBAR": "#171A0F", "BG_CARD": "#252B17", "BG_INPUT": "#30381F", "ACCENT": "#84CC16", "ACCENT_HOVER": "#65A30D", "TEXT_MAIN": "#FFFFFF", "TEXT_CBD5E1": "#CBD5E1"
     }
 }
 
@@ -111,7 +111,7 @@ if current_theme_name not in THEMES:
     current_theme_name = "1. Wolf Life Dark (Rot-Dunkel Standard)"
 t = THEMES[current_theme_name]
 
-# --- PREMIUM DASHBOARD UI & CSS FIXES ---
+# --- CSS: DESIGN, DAUERHAFT GRAUE ELEMENTE & GRÖSSERE NAVIGATION ---
 st.markdown(f"""
 <style>
     .stApp {{
@@ -119,15 +119,30 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]};
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }}
+    
+    /* Sidebar breiter machen & stylen */
     [data-testid="stSidebar"] {{
         background-color: {t["BG_SIDEBAR"]};
         border-right: 1px solid rgba(255, 255, 255, 0.08);
+        min-width: 280px !important;
     }}
+    
+    /* Navigation / Radio-Buttons in der Sidebar größer & lesbarer machen */
+    [data-testid="stSidebar"] .stRadio label {{
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        padding: 6px 0px !important;
+        color: {t["TEXT_MAIN"]} !important;
+    }}
+    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] {{
+        gap: 8px;
+    }}
+
     h1, h2, h3, h4, h5, h6, p, span, label, div {{
         color: {t["TEXT_MAIN"]} !important;
     }}
     
-    /* Expander perfekt lesbar und stylisch machen */
+    /* Expander */
     [data-testid="stExpander"] {{
         background-color: {t["BG_CARD"]} !important;
         border: 1px solid rgba(255, 255, 255, 0.08) !important;
@@ -138,7 +153,7 @@ st.markdown(f"""
         font-weight: 600 !important;
     }}
 
-    /* Statistik-Karten (Cards) */
+    /* Statistik-Karten */
     .metric-card {{
         background-color: {t["BG_CARD"]};
         border: 1px solid rgba(255, 255, 255, 0.06);
@@ -160,7 +175,7 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
 
-    /* Inhaltsboxen / Container */
+    /* Inhaltsboxen */
     .content-box {{
         background-color: {t["BG_CARD"]};
         border: 1px solid rgba(255, 255, 255, 0.06);
@@ -169,7 +184,7 @@ st.markdown(f"""
         margin-bottom: 15px;
     }}
 
-    /* Streamlit Info / Notifications */
+    /* Streamlit Notifications */
     [data-testid="stNotification"] {{
         background-color: {t["BG_CARD"]} !important;
         color: {t["TEXT_MAIN"]} !important;
@@ -180,7 +195,28 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
 
-    /* Buttons absolut fehlerfrei stylen (keine weißen Ränder/Boxen mehr) */
+    /* EINGABEFELDER & PASSWORT-AUGEN FIX (Dauerhaft Grau statt Weiß beim Hover) */
+    input, textarea, select, 
+    div[data-baseweb="input"], div[data-baseweb="select"], 
+    div[data-baseweb="base-input"], span[data-baseweb="tag"] {{
+        background-color: {t["BG_INPUT"]} !important;
+        color: {t["TEXT_MAIN"]} !important;
+        border-color: rgba(255, 255, 255, 0.1) !important;
+    }}
+    
+    /* Erzwinge einheitliches Grau für Input-Container und Fokus */
+    .stTextInput input, .stTextArea textarea, .stSelectbox select {{
+        background-color: {t["BG_INPUT"]} !important;
+        color: {t["TEXT_MAIN"]} !important;
+    }}
+    
+    /* Das Passwort-Auge & Icons im Input-Bereich anpassen */
+    button[kind="header"] svg, [data-baseweb="icon"] svg {{
+        fill: {t["TEXT_MUTED"]} !important;
+        color: {t["TEXT_MUTED"]} !important;
+    }}
+
+    /* Buttons */
     .stButton>button, button[kind="secondaryFormSubmit"], button[kind="primary"] {{
         background-color: {t["ACCENT"]} !important;
         color: #FFFFFF !important;
@@ -194,14 +230,6 @@ st.markdown(f"""
         background-color: {t["ACCENT_HOVER"]} !important;
         color: #FFFFFF !important;
         box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    }}
-
-    /* Inputs & Selectboxen */
-    input, textarea, select {{
-        background-color: {t["BG_INPUT"]} !important;
-        color: {t["TEXT_MAIN"]} !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        border-radius: 8px !important;
     }}
 </style>
 """, unsafe_allow_html=True)
@@ -248,7 +276,7 @@ if not st.session_state.logged_in:
 
 # --- SIDEBAR ---
 st.sidebar.markdown(f"### 🐺 WOLF LIFE")
-st.sidebar.markdown(f"<span style='color:{t['TEXT_MUTED']}; font-size:13px;'>Eingeloggt als:</span><br><strong>{st.session_state.username}</strong>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<span style='color:{t['TEXT_MUTED']}; font-size:14px;'>Eingeloggt als:</span><br><strong style='font-size:16px;'>{st.session_state.username}</strong>", unsafe_allow_html=True)
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
 if st.sidebar.button("🔒 Abmelden", use_container_width=True):
