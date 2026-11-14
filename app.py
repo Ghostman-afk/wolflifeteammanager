@@ -121,7 +121,7 @@ if current_theme_name not in THEMES:
     current_theme_name = "1. Wolf Life Dark (Rot-Dunkel Standard)"
 t = THEMES[current_theme_name]
 
-# --- KOMPLETTES CSS (INKL. FIX FÜR DROP-DOWN & SELECTIONS) ---
+# --- CSS STYLING ---
 st.markdown(f"""
 <style>
     .stApp {{
@@ -211,7 +211,7 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
 
-    /* INPUTS, SELECTBOXEN & DROPDOWNS (Komplett dunkel, kein weißer Bildschirm mehr) */
+    /* INPUTS, SELECTBOXEN & DROPDOWNS */
     input, textarea, select, 
     div[data-baseweb="input"], div[data-baseweb="select"], 
     div[data-baseweb="base-input"], span[data-baseweb="tag"],
@@ -227,7 +227,6 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
     
-    /* Dropdown Menü-Einträge beim Öffnen zwingend dunkel */
     li[role="option"] {{
         background-color: {t["BG_INPUT"]} !important;
         color: {t["TEXT_MAIN"]} !important;
@@ -289,56 +288,12 @@ tabs_meta = [
     ("accounts", "🔑 Benutzer & Rechte")
 ]
 
-# --- SIDEBAR NAVIGATION ---
-st.sidebar.markdown("### 🐺 WOLF LIFE")
-
-if st.session_state.logged_in:
-    st.sidebar.markdown(f"<span style='color:{t['TEXT_MUTED']}; font-size:14px;'>Eingeloggt als:</span><br><strong style='font-size:16px;'>{st.session_state.username}</strong>", unsafe_allow_html=True)
-    st.sidebar.markdown("<br>", unsafe_allow_html=True)
-    
-    if st.sidebar.button("🔒 Abmelden", use_container_width=True):
-        st.session_state.logged_in = False
-        st.rerun()
-
-    st.sidebar.markdown("---")
-
-    available_tabs = []
-    tab_keys = []
-    tab_modes = []
-
-    for key, label in tabs_meta:
-        mode = "full" if st.session_state.is_superadmin else st.session_state.permissions.get(key, "full")
-        if key == "settings": mode = "full"
-        if mode != "hidden":
-            available_tabs.append(label)
-            tab_keys.append(key)
-            tab_modes.append(mode)
-
-    selected_tab_label = st.sidebar.radio("Navigation", available_tabs)
-    current_index = available_tabs.index(selected_tab_label)
-    active_key = tab_keys[current_index]
-    active_mode = tab_modes[current_index]
-
-    is_readonly = (active_mode == "readonly")
-    if is_readonly:
-        st.sidebar.info("ℹ️ Modus: Nur-Lesen")
-else:
-    st.sidebar.markdown("<span style='color:#9CA3AF;'>Bitte zuerst anmelden.</span>", unsafe_allow_html=True)
-    active_key = "login"
-
-def check_write():
-    if is_readonly and not st.session_state.is_superadmin:
-        st.warning("Zugriff verweigert: Account hat nur Lese-Rechte in diesem Tab.")
-        return False
-    return True
-
-def get_member_choices():
-    members = data.get("members", [])
-    if not members: return ["Kein Mitglied eingetragen"]
-    return [f"{m['name']} ({m['rank']})" for m in members]
-
-# --- LOGIN SCREEN ---
+# --- LOGIN-PRÜFUNG & SIDEBAR STEUERUNG ---
 if not st.session_state.logged_in:
+    # Solange NICHT eingeloggt: Sidebar komplett verstecken / leer lassen
+    st.sidebar.empty()
+    
+    # --- LOGIN SCREEN ---
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
@@ -371,6 +326,49 @@ if not st.session_state.logged_in:
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
+# --- WENN EINGELOGGT: ECHTE SIDEBAR & NAVIGATION ANZEIGEN ---
+st.sidebar.markdown("### 🐺 WOLF LIFE")
+st.sidebar.markdown(f"<span style='color:{t['TEXT_MUTED']}; font-size:14px;>Eingeloggt als:</span><br><strong style='font-size:16px;'>{st.session_state.username}</strong>", unsafe_allow_html=True)
+st.sidebar.markdown("<br>", unsafe_allow_html=True)
+
+if st.sidebar.button("🔒 Abmelden", use_container_width=True):
+    st.session_state.logged_in = False
+    st.rerun()
+
+st.sidebar.markdown("---")
+
+available_tabs = []
+tab_keys = []
+tab_modes = []
+
+for key, label in tabs_meta:
+    mode = "full" if st.session_state.is_superadmin else st.session_state.permissions.get(key, "full")
+    if key == "settings": mode = "full"
+    if mode != "hidden":
+        available_tabs.append(label)
+        tab_keys.append(key)
+        tab_modes.append(mode)
+
+selected_tab_label = st.sidebar.radio("Navigation", available_tabs)
+current_index = available_tabs.index(selected_tab_label)
+active_key = tab_keys[current_index]
+active_mode = tab_modes[current_index]
+
+is_readonly = (active_mode == "readonly")
+if is_readonly:
+    st.sidebar.info("ℹ️ Modus: Nur-Lesen")
+
+def check_write():
+    if is_readonly and not st.session_state.is_superadmin:
+        st.warning("Zugriff verweigert: Account hat nur Lese-Rechte in diesem Tab.")
+        return False
+    return True
+
+def get_member_choices():
+    members = data.get("members", [])
+    if not members: return ["Kein Mitglied eingetragen"]
+    return [f"{m['name']} ({m['rank']})" for m in members]
+
 # --- 1. DASHBOARD ---
 if active_key == "dashboard":
     st.title("📊 Dashboard & Live-Statistiken")
@@ -380,7 +378,7 @@ if active_key == "dashboard":
     total_members = len(data["members"])
     total_applicants = len([a for a in data["applicants"] if a.get("status") not in ["Angenommen", "Abgelehnt"]])
     active_warnings = len(data["warnings"])
-    open_tasks = len([t for t in data["tasks"] if t.get("status") != "Erledigt"])
+    open_tasks = len([t for t in data["tasks"] if t.get("status"] != "Erledigt"])
     
     col1, col2, col3, col4 = st.columns(4)
     with col1:
