@@ -1,10 +1,12 @@
 import streamlit as st
-import json, os, uuid, time, hmac, hashlib, secrets, threading, shutil
+import json, os, uuid, time, hmac, hashlib, secrets, threading, shutil, base64, random
+from urllib.parse import quote
 from contextlib import contextmanager
 from datetime import datetime, date
 from html import escape as esc
 
-st.set_page_config(page_title="Wolf Life Team-Management", page_icon="🐺", layout="wide")
+LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logo.jpg")
+st.set_page_config(page_title="Wolf Life Team-Management", page_icon=LOGO if os.path.exists(LOGO) else "🐺", layout="wide")
 
 DATA_FILE = "wolflife_team_data.json"
 DEFAULT_THEME = "1. Wolf Life Dark (Rot-Dunkel Standard)"
@@ -66,6 +68,33 @@ def rank_color(r):
 def uid(): return uuid.uuid4().hex
 
 
+@st.cache_resource
+def _b64(path):
+    with open(path, "rb") as f: return base64.b64encode(f.read()).decode()
+
+
+def logo_html(width):
+    if not os.path.exists(LOGO): return ""
+    return f"<img class='logo' src='data:image/jpeg;base64,{_b64(LOGO)}' style='width:{width}px'>"
+
+
+def skyline_uri(color):
+    """Los-Santos-Skyline mit Palmen als dezenter Hintergrund (wie im Logo)."""
+    rnd, parts, x = random.Random(7), [], 0
+    while x < 1600:
+        w, h = rnd.randint(40, 90), rnd.randint(60, 190)
+        parts.append(f"<rect x='{x}' y='{260 - h}' width='{w}' height='{h}'/>")
+        for _ in range(3):
+            parts.append(f"<rect x='{x + rnd.randint(6, w - 14)}' y='{260 - h + rnd.randint(8, h - 20)}' width='5' height='7' fill-opacity='.55'/>")
+        x += w + rnd.randint(2, 10)
+    for px in (120, 560, 1010, 1450):
+        parts.append(f"<rect x='{px}' y='150' width='6' height='110'/><ellipse cx='{px + 3}' cy='148' rx='38' ry='10'/>"
+                     f"<ellipse cx='{px + 3}' cy='142' rx='10' ry='30'/>")
+    svg = (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 260' preserveAspectRatio='none'>"
+           f"<g fill='{color}' fill-opacity='0.16'>{''.join(parts)}</g></svg>")
+    return "data:image/svg+xml;utf8," + quote(svg)
+
+
 def chip(text, color):
     return f"<span class='chip' style='color:{color};border-color:{color}'>{esc(text)}</span>"
 
@@ -73,7 +102,7 @@ def chip(text, color):
 def badge(r):
     c = rank_color(r)
     return (f"<span style='color:{c};border:1px solid {c};border-radius:999px;padding:2px 10px;"
-            f"font-weight:bold;font-size:13px'>{esc(r)}</span>")
+            f"font-weight:bold;font-size:13px'>{'👑 ' if r == 'Owner' else ''}{esc(r)}</span>")
 
 
 def fmt(s):
@@ -192,36 +221,47 @@ ss.setdefault("user", None)
 data = load_data()
 uname = ss.user["username"] if ss.user else None
 tname = data["settings"].get("themes", {}).get(uname) or DEFAULT_THEME
-t = THEMES.get(tname, THEMES[DEFAULT_THEME])
+t = dict(THEMES.get(tname, THEMES[DEFAULT_THEME]))
+t["ACCENT_RGB"] = ",".join(str(int(t["ACCENT"][i:i + 2], 16)) for i in (1, 3, 5))
+t["SKY"] = skyline_uri(t["ACCENT"])
 
 CSS = """
-.stApp{background:@BG_MAIN;color:@TEXT_MAIN;font-family:'Segoe UI',Tahoma,sans-serif}
-[data-testid=stSidebar]{background:@BG_SIDEBAR;border-right:1px solid rgba(255,255,255,.08);min-width:280px!important}
-[data-testid=stSidebar] .stRadio label{font-size:16px!important;font-weight:600!important;padding:6px 0!important}
-h1,h2,h3,h4,h5,h6,p,label,span:not([style*="color"]){color:@TEXT_MAIN!important}
-[data-testid=stExpander],[data-testid=stExpander] details,[data-testid=stExpander] summary,[data-testid=stExpanderDetails]{background:@BG_CARD!important;color:@TEXT_MAIN!important}
-[data-testid=stExpander]{border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;overflow:hidden!important}
-.metric-card,.content-box{background:@BG_CARD;border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:20px;box-shadow:0 4px 6px -1px rgba(0,0,0,.2);margin-bottom:10px}
-.metric-title{font-size:13px;color:@TEXT_MUTED!important;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
-.metric-value{font-size:28px;font-weight:700}
-.content-box .muted,.muted{color:@TEXT_MUTED!important;font-size:12px}
-input,textarea,select,div[data-baseweb=input],div[data-baseweb=select],div[data-baseweb=base-input],span[data-baseweb=tag],ul[data-baseweb=menu],li[data-baseweb=option],div[data-baseweb=popover],li[role=option]{background:@BG_INPUT!important;color:@TEXT_MAIN!important;border-color:rgba(255,255,255,.1)!important}
-li[role=option]:hover{background:@ACCENT!important}
-.stButton>button,[data-testid=stFormSubmitButton] button,button[kind=secondaryFormSubmit]{background:@ACCENT!important;color:#fff!important;border:none!important;border-radius:8px!important;font-weight:600!important}
-.stButton>button:hover,[data-testid=stFormSubmitButton] button:hover{background:@ACCENT_HOVER!important}
-#MainMenu,footer{visibility:hidden}
+.stApp{background:url("@SKY") bottom center/100% 240px no-repeat fixed,radial-gradient(ellipse 70% 45% at 88% -8%,rgba(@ACCENT_RGB,.20),transparent 60%),radial-gradient(ellipse 60% 40% at 0% 100%,rgba(@ACCENT_RGB,.09),transparent 60%),@BG_MAIN;color:@TEXT_MAIN;font-family:'Segoe UI',Tahoma,sans-serif}
+[data-testid=stHeader]{background:transparent}
 .block-container{padding-top:2rem;max-width:1400px}
-h1{font-weight:800!important;letter-spacing:-.5px;border-bottom:3px solid @ACCENT;display:inline-block;padding-bottom:6px;margin-bottom:.5rem!important}
-.content-box{border-left:4px solid @ACCENT;transition:transform .15s,box-shadow .15s}
-.content-box:hover{transform:translateY(-1px);box-shadow:0 8px 16px rgba(0,0,0,.35)}
-.metric-card{border-top:3px solid @ACCENT;background:linear-gradient(160deg,@BG_CARD,@BG_SIDEBAR)}
-.metric-value{font-size:34px!important}
-.chip{border:1px solid;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
-.stButton>button,[data-testid=stFormSubmitButton] button{transition:all .15s}
-.stButton>button:hover{transform:translateY(-1px)}
-[data-testid=stSidebar] .stRadio div[role=radiogroup]>label{padding:8px 12px!important;border-radius:10px;transition:background .15s}
+#MainMenu,footer{visibility:hidden}
+[data-testid=stSidebar]{background:linear-gradient(180deg,@BG_SIDEBAR,@BG_MAIN);border-right:1px solid rgba(@ACCENT_RGB,.35);box-shadow:4px 0 28px rgba(@ACCENT_RGB,.08);min-width:280px!important}
+[data-testid=stSidebar] .stRadio label{font-size:16px!important;font-weight:600!important}
+[data-testid=stSidebar] .stRadio div[role=radiogroup]>label{padding:8px 12px!important;border-radius:4px 12px 4px 12px;transition:background .15s}
 [data-testid=stSidebar] .stRadio div[role=radiogroup]>label:hover{background:@BG_CARD}
-[data-testid=stSidebar] .stRadio div[role=radiogroup]>label:has(input:checked){background:@BG_CARD;border-left:3px solid @ACCENT}
+[data-testid=stSidebar] .stRadio div[role=radiogroup]>label:has(input:checked){background:linear-gradient(90deg,rgba(@ACCENT_RGB,.30),@BG_CARD);border-left:3px solid @ACCENT}
+h1,h2,h3,h4,h5,h6,p,label,span:not([style*="color"]){color:@TEXT_MAIN!important}
+.stApp h1{font-weight:900!important;letter-spacing:1px;text-transform:uppercase;text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 24px rgba(@ACCENT_RGB,.55);padding-bottom:8px;border-bottom:3px solid @ACCENT;display:inline-block;margin-bottom:.5rem!important}
+.block-container h3::before{content:"◢ ";color:@ACCENT!important;font-size:.8em}
+hr{border:none!important;height:1px!important;background:linear-gradient(90deg,transparent,@ACCENT,transparent)!important;opacity:.6}
+.logo{display:block;margin:0 auto 10px;max-width:100%;border-radius:18px;box-shadow:0 0 30px rgba(@ACCENT_RGB,.45),0 0 0 1px rgba(255,255,255,.08)}
+.tagline{letter-spacing:.35em;font-weight:700;font-size:13px;color:@ACCENT!important;margin:14px 0 18px;text-transform:uppercase}
+.metric-card,.content-box{position:relative;overflow:hidden;background:linear-gradient(225deg,rgba(@ACCENT_RGB,.6) 50%,transparent 50%) top right/26px 26px no-repeat,linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,0) 45%),@BG_CARD;border:1px solid rgba(255,255,255,.08);border-left:4px solid @ACCENT;border-radius:6px 18px 6px 18px;padding:20px;box-shadow:0 6px 18px rgba(0,0,0,.4);margin-bottom:10px;transition:transform .15s,box-shadow .15s}
+.content-box:hover,.metric-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.45),0 0 22px rgba(@ACCENT_RGB,.22)}
+.metric-card{border-left-width:1px;border-top:3px solid @ACCENT}
+.metric-card::after{content:"🐺";position:absolute;right:12px;bottom:-8px;font-size:62px;opacity:.08}
+.metric-title{font-size:13px;color:@TEXT_MUTED!important;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.metric-value{font-size:34px!important;font-weight:800;text-shadow:0 0 18px rgba(@ACCENT_RGB,.55)}
+.content-box .muted,.muted{color:@TEXT_MUTED!important;font-size:12px}
+.chip{border:1px solid;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+[data-testid=stExpander],[data-testid=stExpander] details,[data-testid=stExpander] summary,[data-testid=stExpanderDetails]{background:@BG_CARD!important;color:@TEXT_MAIN!important}
+[data-testid=stExpander]{border:1px solid rgba(@ACCENT_RGB,.25)!important;border-radius:6px 16px 6px 16px!important;overflow:hidden!important}
+[data-testid=stForm]{background:@BG_CARD;border:1px solid rgba(@ACCENT_RGB,.30)!important;border-radius:6px 18px 6px 18px;box-shadow:0 0 30px rgba(@ACCENT_RGB,.10)}
+[data-testid=stAlert],[data-testid=stNotification]{background:@BG_CARD!important;border:1px solid rgba(255,255,255,.1)!important;border-left:4px solid @ACCENT!important;border-radius:6px 14px 6px 14px!important}
+[data-testid=stAlert] *,[data-testid=stNotification] *{color:@TEXT_MAIN!important;background:transparent!important}
+[data-testid=stAlert]:has([data-testid=stAlertContentWarning]){border-left-color:#F59E0B!important}
+[data-testid=stAlert]:has([data-testid=stAlertContentError]){border-left-color:#EF4444!important}
+[data-testid=stAlert]:has([data-testid=stAlertContentSuccess]){border-left-color:#22C55E!important}
+input,textarea,select,div[data-baseweb=input],div[data-baseweb=select],div[data-baseweb=base-input],span[data-baseweb=tag],ul[data-baseweb=menu],li[data-baseweb=option],div[data-baseweb=popover],li[role=option]{background:@BG_INPUT!important;color:@TEXT_MAIN!important;border-color:rgba(255,255,255,.1)!important}
+input:focus,textarea:focus{box-shadow:0 0 0 1px @ACCENT!important}
+li[role=option]:hover{background:@ACCENT!important}
+.stButton>button,[data-testid=stFormSubmitButton] button,[data-testid=stDownloadButton] button,button[kind=secondaryFormSubmit]{background:linear-gradient(180deg,@ACCENT,@ACCENT_HOVER)!important;color:#fff!important;border:none!important;border-radius:4px 12px 4px 12px!important;font-weight:700!important;letter-spacing:.3px;box-shadow:0 2px 10px rgba(@ACCENT_RGB,.35);transition:all .15s}
+.stButton>button:hover,[data-testid=stFormSubmitButton] button:hover,[data-testid=stDownloadButton] button:hover{filter:brightness(1.12);transform:translateY(-1px);box-shadow:0 4px 18px rgba(@ACCENT_RGB,.55)}
 ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:@BG_INPUT;border-radius:4px}
 """
 for k in sorted(t, key=len, reverse=True): CSS = CSS.replace("@" + k, t[k])
@@ -251,9 +291,8 @@ if not any(u.get("is_admin") for u in data["users"]):
 
 if not ss.user:
     c = st.columns([1, 1.2, 1])[1]
-    c.markdown("<h2 style='text-align:center'>🐺 WOLF LIFE</h2>"
-               f"<p style='text-align:center;font-weight:bold;color:{t['ACCENT']}'>TEAM MANAGEMENT SUITE</p>",
-               unsafe_allow_html=True)
+    c.markdown(f"<div style='text-align:center'>{logo_html(340) or '<h2>🐺 WOLF LIFE</h2>'}"
+               "<div class='tagline'>Team Management Suite</div></div>", unsafe_allow_html=True)
     with c.form("login"):
         n = st.text_input("Benutzername")
         p = st.text_input("Passwort", type="password")
@@ -287,7 +326,8 @@ def mode_of(key):
     return user["permissions"].get(key, "hidden")
 
 
-st.sidebar.markdown("<h2 style='margin:0'>🐺 WOLF LIFE</h2><div class='muted'>Team Management Suite</div><br>", unsafe_allow_html=True)
+st.sidebar.markdown(f"{logo_html(230) or '<h2>🐺 WOLF LIFE</h2>'}<div class='tagline' style='text-align:center;font-size:11px;margin:4px 0 14px'>Los Santos · Team Suite</div>",
+                    unsafe_allow_html=True)
 st.sidebar.markdown(f"<span class='muted'>Eingeloggt als:</span><br><strong>{esc(user['username'])}</strong>",
                     unsafe_allow_html=True)
 if st.sidebar.button("🔒 Abmelden", use_container_width=True):
