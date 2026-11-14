@@ -704,6 +704,26 @@ elif key == "accounts":
                     st.rerun()
     for u in data["users"]:
         with st.expander(f"{u['username']} {'(Administrator)' if u.get('is_admin') else ''}"):
+            # NEU: Benutzername ändern
+            new_uname = st.text_input("Benutzername ändern", value=u["username"], key=f"nu_{u['username']}")
+            if st.button("✏️ Namen speichern", key=f"su_{u['username']}"):
+                new_clean = new_uname.strip()
+                if len(new_clean) < 3:
+                    st.error("Benutzername muss mindestens 3 Zeichen lang sein.")
+                elif new_clean.lower() != u["username"].lower() and new_clean.lower() in [x["username"].lower() for x in data["users"]]:
+                    st.error("Dieser Benutzername ist bereits vergeben.")
+                else:
+                    with edit(f"Benutzername von {u['username']} in {new_clean} geändert") as d:
+                        for x in d["users"]:
+                            if x["username"] == u["username"]:
+                                x["username"] = new_clean
+                    # Falls man den eigenen Namen ändert, Session anpassen
+                    if ss.user["username"] == u["username"]:
+                        ss.user["username"] = new_clean
+                    st.success("Benutzername erfolgreich aktualisiert!")
+                    st.rerun()
+
+            st.markdown("---")
             is_self = u["username"] == user["username"]
             adm = st.checkbox("Administrator (voller Zugriff)", value=bool(u.get("is_admin")),
                               disabled=is_self, key=f"adm_{u['username']}")
