@@ -479,14 +479,13 @@ elif key == "team":
     shown = [m for m in data["members"] if q in m["name"].lower() and sf in ("Alle", m["status"])]
 
     for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
-        card_inner = (f"<div style='display:flex;justify-content:space-between;align-items:center;width:100%'>"
-                      f"<div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
-                      f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
-                      f"<div>{badge(m['rank'])}</div></div>")
-        
         st.markdown(f"<div class='member-card-wrapper'>", unsafe_allow_html=True)
+        
+        # Statt HTML im Popover nutzen wir hier eine saubere Beschriftung für den Button
+        popover_label = f"👤 {m['name']}  ({m['rank']})  –  Status: {m['status']}"
+        
         if can_write:
-            with st.popover(card_inner, use_container_width=True):
+            with st.popover(popover_label, use_container_width=True):
                 st.markdown(f"### ✏️ {esc(m['name'])} bearbeiten")
                 a, b = st.columns(2)
                 nr = a.selectbox("Rang", RANKS, index=RANKS.index(m["rank"]) if m["rank"] in RANKS else 0, key=f"r{m['id']}")
@@ -507,6 +506,10 @@ elif key == "team":
                                                  "removed_by": user["username"]})
                         st.rerun()
         else:
+            card_inner = (f"<div style='display:flex;justify-content:space-between;align-items:center;width:100%'>"
+                          f"<div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
+                          f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
+                          f"<div>{badge(m['rank'])}</div></div>")
             show(card_inner)
         st.markdown("</div>", unsafe_allow_html=True)
 
