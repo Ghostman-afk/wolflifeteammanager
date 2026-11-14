@@ -111,7 +111,7 @@ if current_theme_name not in THEMES:
     current_theme_name = "1. Wolf Life Dark (Rot-Dunkel Standard)"
 t = THEMES[current_theme_name]
 
-# --- CSS: DESIGN, DAUERHAFT GRAUE EXPANDER/ELEMENTE & GRÖSSERE NAVIGATION ---
+# --- KOMPLETTES CSS (EXPANDER, INPUTS & PASSWORT-AUGE 100% DUNKEL) ---
 st.markdown(f"""
 <style>
     .stApp {{
@@ -120,14 +120,13 @@ st.markdown(f"""
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }}
     
-    /* Sidebar breiter machen & stylen */
+    /* Sidebar */
     [data-testid="stSidebar"] {{
         background-color: {t["BG_SIDEBAR"]};
         border-right: 1px solid rgba(255, 255, 255, 0.08);
         min-width: 280px !important;
     }}
     
-    /* Navigation / Radio-Buttons in der Sidebar größer & lesbarer machen */
     [data-testid="stSidebar"] .stRadio label {{
         font-size: 16px !important;
         font-weight: 600 !important;
@@ -142,7 +141,7 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
     
-    /* EXPANDER FIX: Immer grau, auch wenn aufgeklappt und NICHT gehovert */
+    /* EXPANDER FIX: Dauerhaft dunkel-grau */
     [data-testid="stExpander"],
     [data-testid="stExpander"] details,
     [data-testid="stExpander"] details[open],
@@ -163,9 +162,6 @@ st.markdown(f"""
     [data-testid="stExpander"] summary {{
         border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
     }}
-    [data-testid="stExpander"] summary:hover {{
-        background-color: {t["BG_INPUT"]} !important;
-    }}
     [data-testid="stExpander"] summary span,
     [data-testid="stExpander"] summary svg {{
         color: {t["TEXT_MAIN"]} !important;
@@ -173,8 +169,8 @@ st.markdown(f"""
         font-weight: 600 !important;
     }}
 
-    /* Statistik-Karten */
-    .metric-card {{
+    /* Statistik-Karten & Inhaltsboxen */
+    .metric-card, .content-box {{
         background-color: {t["BG_CARD"]};
         border: 1px solid rgba(255, 255, 255, 0.06);
         border-radius: 12px;
@@ -195,16 +191,7 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
 
-    /* Inhaltsboxen */
-    .content-box {{
-        background-color: {t["BG_CARD"]};
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 15px;
-    }}
-
-    /* Streamlit Notifications */
+    /* Notifications */
     [data-testid="stNotification"] {{
         background-color: {t["BG_CARD"]} !important;
         color: {t["TEXT_MAIN"]} !important;
@@ -215,11 +202,10 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
 
-    /* EINGABEFELDER & PASSWORT-AUGEN FIX (Dauerhaft Grau statt Weiß) */
+    /* INPUTS & PASSWORT-AUGE: Weissen Kasten komplett neutralisieren */
     input, textarea, select, 
     div[data-baseweb="input"], div[data-baseweb="select"], 
-    div[data-baseweb="base-input"], span[data-baseweb="tag"],
-    [data-testid="stTextInput"] button {{
+    div[data-baseweb="base-input"], span[data-baseweb="tag"] {{
         background-color: {t["BG_INPUT"]} !important;
         color: {t["TEXT_MAIN"]} !important;
         border-color: rgba(255, 255, 255, 0.1) !important;
@@ -228,6 +214,18 @@ st.markdown(f"""
     .stTextInput input, .stTextArea textarea, .stSelectbox select {{
         background-color: {t["BG_INPUT"]} !important;
         color: {t["TEXT_MAIN"]} !important;
+    }}
+    
+    .stTextInput div[data-baseweb="input"] {{
+        background-color: {t["BG_INPUT"]} !important;
+        border-radius: 8px !important;
+    }}
+    
+    /* Passwort-Auge Button Box transparent machen */
+    .stTextInput button, [data-testid="stTextInput"] button,
+    div[data-baseweb="input"] > div:last-child {{
+        background-color: transparent !important;
+        border: none !important;
     }}
     
     button[kind="header"] svg, [data-baseweb="icon"] svg, [data-testid="stTextInput"] button svg {{
@@ -348,6 +346,14 @@ def get_member_choices():
     members = data.get("members", [])
     if not members: return ["Kein Mitglied eingetragen"]
     return [f"{m['name']} ({m['rank']})" for m in members]
+
+# --- HILFS-BUTTON FÜR EINGEKLAPPTE SIDEBAR ---
+# Falls die Sidebar minimiert wurde, hilft dieser Shortcut-Text am oberen Bildschirmrand
+st.markdown("""
+<div style="font-size: 11px; color: #71717A; margin-bottom: -15px;">
+    💡 <i>Tipp: Falls die linke Leiste eingeklappt ist, drücke einfach <b>Strg + Shift + M</b> auf deiner Tastatur, um sie wieder einzublenden.</i>
+</div>
+""", unsafe_allow_html=True)
 
 # --- 1. DASHBOARD ---
 if active_key == "dashboard":
