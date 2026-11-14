@@ -273,13 +273,19 @@ li[role=option]:hover{background:@ACCENT!important}
 [data-testid=stSidebar] .st-key-logout button>div{justify-content:center!important}
 [data-testid=stSidebar] .st-key-logout button p{text-align:center!important}
 [data-testid=stSidebar] .st-key-logout button:hover{background:rgba(239,68,68,.25)!important;border-color:#EF4444!important;transform:none}
+.member-card{min-height:104px}
+[class*="st-key-edit_"]{align-items:flex-end;margin-top:-72px;margin-bottom:22px;padding-right:16px;position:relative;z-index:3}
+[class*="st-key-edit_"] button{width:34px;height:34px;min-height:34px!important;padding:0!important;border-radius:50%!important;background:rgba(255,255,255,.07)!important;border:1px solid rgba(@ACCENT_RGB,.55)!important;box-shadow:none!important;transition:all .15s}
+[class*="st-key-edit_"] button:hover{background:rgba(@ACCENT_RGB,.30)!important;transform:scale(1.1)}
+[class*="st-key-edit_"] button svg{display:none}
+[data-testid=stPopoverBody]{min-width:360px}
 ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:@BG_INPUT;border-radius:4px}
 """
 for k in sorted(t, key=len, reverse=True): CSS = CSS.replace("@" + k, t[k])
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 
-def show(h): st.markdown(f"<div class='content-box'>{h}</div>", unsafe_allow_html=True)
+def show(h, cls=""): st.markdown(f"<div class='content-box {cls}'>{h}</div>", unsafe_allow_html=True)
 
 
 # --- ERSTEINRICHTUNG & LOGIN ---
@@ -453,9 +459,9 @@ elif key == "team":
     for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
         show(f"<div style='display:flex;justify-content:space-between'><div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
              f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
-             f"<div>{badge(m['rank'])}</div></div>")
+             f"<div>{badge(m['rank'])}</div></div>", "member-card")
         if can_write:
-            with st.expander(f"✏️ {m['name']} bearbeiten"):
+            with st.container(key=f"edit_{m['id']}"), st.popover("✏️"):
                 a, b = st.columns(2)
                 nr = a.selectbox("Rang", RANKS, index=RANKS.index(m["rank"]) if m["rank"] in RANKS else 0, key=f"r{m['id']}")
                 ns = b.selectbox("Status", MEMBER_STATUS, index=MEMBER_STATUS.index(m["status"]) if m["status"] in MEMBER_STATUS else 0, key=f"s{m['id']}")
