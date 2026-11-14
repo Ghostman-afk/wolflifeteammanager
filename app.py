@@ -126,7 +126,7 @@ if current_theme_name not in THEMES:
     current_theme_name = "1. Wolf Life Dark (Rot-Dunkel Standard)"
 t = THEMES[current_theme_name]
 
-# --- DYNAMISCHES CSS (GARANTIERT HELLE SCHRIFT & SICHTBARER BENUTZER) ---
+# --- DYNAMISCHES CSS (INKL. FIX FÜR INFO-BOXEN) ---
 st.markdown(f"""
 <style>
     .stApp {{
@@ -147,6 +147,15 @@ st.markdown(f"""
     }}
     [data-testid="stMetricLabel"] {{
         color: {t["TEXT_MUTED"]} !important;
+    }}
+    /* Fix für Info-Boxen (st.info), damit sie dunkel und lesbar sind */
+    [data-testid="stNotification"] {{
+        background-color: {t["BG_CARD"]} !important;
+        color: {t["TEXT_MAIN"]} !important;
+        border: 1px solid {t["ACCENT"]} !important;
+    }}
+    [data-testid="stNotification"] p {{
+        color: {t["TEXT_MAIN"]} !important;
     }}
     .stButton>button {{
         background-color: {t["ACCENT"]};
@@ -242,7 +251,7 @@ tab_modes = []
 
 for key, label in tabs_meta:
     mode = "full" if st.session_state.is_superadmin else st.session_state.permissions.get(key, "full")
-    if key == "settings": mode = "full" # Einstellungen für jeden erreichbar
+    if key == "settings": mode = "full"
     if mode != "hidden":
         available_tabs.append(label)
         tab_keys.append(key)
