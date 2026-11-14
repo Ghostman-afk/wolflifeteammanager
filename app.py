@@ -111,7 +111,7 @@ if current_theme_name not in THEMES:
     current_theme_name = "1. Wolf Life Dark (Rot-Dunkel Standard)"
 t = THEMES[current_theme_name]
 
-# --- PREMIUM DASHBOARD UI & CSS ---
+# --- PREMIUM DASHBOARD UI & CSS FIXES ---
 st.markdown(f"""
 <style>
     .stApp {{
@@ -127,7 +127,18 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
     
-    /* Moderne Dashboard-Karten (Cards) für Metriken */
+    /* Expander perfekt lesbar und stylisch machen */
+    [data-testid="stExpander"] {{
+        background-color: {t["BG_CARD"]} !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 12px !important;
+    }}
+    [data-testid="stExpander"] summary span {{
+        color: {t["TEXT_MAIN"]} !important;
+        font-weight: 600 !important;
+    }}
+
+    /* Statistik-Karten (Cards) */
     .metric-card {{
         background-color: {t["BG_CARD"]};
         border: 1px solid rgba(255, 255, 255, 0.06);
@@ -158,7 +169,7 @@ st.markdown(f"""
         margin-bottom: 15px;
     }}
 
-    /* Streamlit native Info / Notifications fixen */
+    /* Streamlit Info / Notifications */
     [data-testid="stNotification"] {{
         background-color: {t["BG_CARD"]} !important;
         color: {t["TEXT_MAIN"]} !important;
@@ -169,22 +180,23 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
 
-    /* Buttons */
-    .stButton>button {{
-        background-color: {t["ACCENT"]};
-        color: white;
-        border-radius: 8px;
-        border: none;
-        font-weight: 600;
-        padding: 0.5rem 1rem;
-        transition: all 0.2s ease;
+    /* Buttons absolut fehlerfrei stylen (keine weißen Ränder/Boxen mehr) */
+    .stButton>button, button[kind="secondaryFormSubmit"], button[kind="primary"] {{
+        background-color: {t["ACCENT"]} !important;
+        color: #FFFFFF !important;
+        border-radius: 8px !important;
+        border: none !important;
+        font-weight: 600 !important;
+        padding: 0.5rem 1rem !important;
+        width: 100% !important;
     }}
-    .stButton>button:hover {{
-        background-color: {t["ACCENT_HOVER"]};
+    .stButton>button:hover, button[kind="secondaryFormSubmit"]:hover, button[kind="primary"]:hover {{
+        background-color: {t["ACCENT_HOVER"]} !important;
+        color: #FFFFFF !important;
         box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }}
 
-    /* Inputs */
+    /* Inputs & Selectboxen */
     input, textarea, select {{
         background-color: {t["BG_INPUT"]} !important;
         color: {t["TEXT_MAIN"]} !important;
