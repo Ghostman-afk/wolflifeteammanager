@@ -116,10 +116,6 @@ def fmt(s):
 def _lock(): return threading.Lock()
 
 
-@st.cache_resource
-def _fails(): return {}
-
-
 DEFAULTS = {"members": [], "applicants": [], "warnings": [], "absences": [], "tasks": [],
             "protocols": [], "notes": "", "users": [], "log": [], "settings": {}, "archive": []}
 
@@ -169,7 +165,7 @@ def remove(coll, iid, label):
     st.rerun()
 
 
-# --- PASSWÖRTER & LOGIN-SCHUTZ ---
+# --- PASSWÖRTER & LOGIN ---
 def hash_pw(pw, salt=None):
     salt = salt or secrets.token_bytes(16)
     return salt.hex() + "$" + hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1).hex()
@@ -178,16 +174,6 @@ def hash_pw(pw, salt=None):
 def check_pw(pw, stored):
     try: return hmac.compare_digest(hash_pw(pw, bytes.fromhex(stored.split("$")[0])), stored)
     except Exception: return False
-
-
-def locked(name):
-    return _fails().get(name.strip().lower(), (0, 0))[1] > time.time()
-
-
-def register_fail(name):
-    k = name.strip().lower()
-    n = _fails().get(k, (0, 0))[0] + 1
-    _fails()[k] = (0, time.time() + 300) if n >= 5 else (n, 0)
 
 
 def authenticate(name, pw):
@@ -260,7 +246,7 @@ li[role=option]:hover{background:@ACCENT!important}
 .stButton>button,[data-testid=stFormSubmitButton] button,[data-testid=stDownloadButton] button,button[kind=secondaryFormSubmit]{background:linear-gradient(180deg,@ACCENT,@ACCENT_HOVER)!important;color:#fff!important;border:none!important;border-radius:4px 12px 4px 12px!important;font-weight:700!important;letter-spacing:.3px;box-shadow:0 2px 10px rgba(@ACCENT_RGB,.35);transition:all .15s}
 .stButton>button:hover,[data-testid=stFormSubmitButton] button:hover,[data-testid=stDownloadButton] button:hover{filter:brightness(1.12);transform:translateY(-1px);box-shadow:0 4px 18px rgba(@ACCENT_RGB,.55)}
 
-/* --- FIX FÜR POPOVER-BUTTONS (GRAUER HINTERGRUND) --- */
+/* --- POPOVER-BUTTONS (GRAUER HINTERGRUND) --- */
 [data-testid=stPopover] button {
     background: @BG_CARD !important;
     color: @TEXT_MAIN !important;
@@ -298,6 +284,49 @@ for k in sorted(t, key=len, reverse=True): CSS = CSS.replace("@" + k, t[k])
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 
+# --- DYNAMISCHE THEME-HINTERGRÜNDE (THEMES_BG ORDNER) ---
+THEME_BG_FOLDER = "themes_bg"
+
+def get_theme_bg_style(current_theme_name):
+    if not os.path.exists(THEME_BG_FOLDER):
+        return ""
+    files = os.listdir(THEME_BG_FOLDER)
+    matching_file = None
+    safe_theme_name = current_theme_name.split(".")[0].strip()
+    
+    for f in files:
+        if f.lower().startswith(safe_theme_name.lower()) and f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+            matching_file = f
+            break
+    if not matching_file:
+        for f in files:
+            if current_theme_name.lower() in f.lower() and f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                matching_file = f
+                break
+
+    if not matching_file:
+        return ""
+
+    img_path = os.path.join(THEME_BG_FOLDER, matching_file)
+    with open(img_path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode()
+    
+    ext = matching_file.split('.')[-1].lower()
+    mime_type = "image/png" if ext == "png" else "image/jpeg"
+    
+    return f"""
+    .stApp {{
+        background: linear-gradient(rgba(13, 13, 17, 0.88), rgba(13, 13, 17, 0.88)), 
+                    url("data:{mime_type};base64,{encoded}") no-repeat center center fixed !important;
+        background-size: cover !important;
+    }}
+    """
+
+theme_bg_css = get_theme_bg_style(tname)
+if theme_bg_css:
+    st.markdown(f"<style>{theme_bg_css}</style>", unsafe_allow_html=True)
+
+
 def show(h, cls=""): st.markdown(f"<div class='content-box {cls}'>{h}</div>", unsafe_allow_html=True)
 
 
@@ -327,15 +356,12 @@ if not ss.user:
         n = st.text_input("Benutzername")
         p = st.text_input("Passwort", type="password")
         if st.form_submit_button("Anmelden", use_container_width=True):
-            if locked(n):
-                st.error("Zu viele Fehlversuche. Bitte 5 Minuten warten.")
+            u = authenticate(n, p)
+            if u:
+                ss.user = {"username": u["username"], "is_admin": bool(u.get("is_admin")),
+                           "permissions": u.get("permissions") or {}}
+                st.rerun()
             else:
-                u = authenticate(n, p)
-                if u:
-                    ss.user = {"username": u["username"], "is_admin": bool(u.get("is_admin")),
-                               "permissions": u.get("permissions") or {}}
-                    st.rerun()
-                register_fail(n)
                 st.error("Falscher Benutzername oder falsches Passwort!")
     st.stop()
 
@@ -593,7 +619,6 @@ elif key == "absences":
             else:
                 with st.form("add_abs", clear_on_submit=True):
                     if perm_mode == "absence_own":
-                        # Nur eigener Name wählbar (oder Name der dem Account entspricht / manuell wählbar aus Mitgliedern)
                         match_m = next((m for m in member_names if m.lower() == user["username"].lower()), member_names[0] if member_names else "")
                         am = st.selectbox("Mitglied", [match_m] if match_m else member_names, format_func=mlabel)
                         st.caption(f"ℹ️ Du kannst als '{user['username']}' nur deine eigene Abmeldung eintragen.")
@@ -614,7 +639,6 @@ elif key == "absences":
                             
     for a in reversed(data["absences"]):
         show(f"<strong>{esc(mlabel(a['name']))}</strong> ({fmt(a['from_date'])} ➔ {fmt(a['to_date'])})<br>Grund: {esc(a['reason'])}")
-        # Lösch-Logik für Abmeldungen: Admins (full) dürfen alles löschen, absence_own nur wenn der Name zum User passt
         can_del_this = (perm_mode == "full") or (perm_mode == "absence_own" and a['name'].lower() == user['username'].lower())
         if can_del_this:
             if st.button("🗑 Löschen", key=f"del_abs_{a['id']}"): 
