@@ -237,8 +237,8 @@ h1,h2,h3,h4,h5,h6,p,label,span:not([style*="color"]){color:@TEXT_MAIN!important}
 hr{border:none!important;height:1px!important;background:linear-gradient(90deg,transparent,@ACCENT,transparent)!important;opacity:.6}
 .logo{display:block;margin:0 auto 10px;max-width:100%;border-radius:18px;box-shadow:0 0 30px rgba(@ACCENT_RGB,.45),0 0 0 1px rgba(255,255,255,.08)}
 .tagline{letter-spacing:.35em;font-weight:700;font-size:13px;color:@ACCENT!important;margin:14px 0 18px;text-transform:uppercase}
-.metric-card,.content-box{position:relative;overflow:hidden;background:linear-gradient(225deg,rgba(@ACCENT_RGB,.6) 50%,transparent 50%) top right/26px 26px no-repeat,linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,0) 45%),@BG_CARD;border:1px solid rgba(255,255,255,.08);border-left:4px solid @ACCENT;border-radius:6px 18px 6px 18px;padding:20px;box-shadow:0 6px 18px rgba(0,0,0,.4);margin-bottom:10px;transition:transform .15s,box-shadow .15s}
-.content-box:hover,.metric-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(0,0,0,.45),0 0 22px rgba(@ACCENT_RGB,.22)}
+.metric-card,.content-box{position:relative;overflow:hidden;background:linear-gradient(225deg,rgba(@ACCENT_RGB,.6) 50%,transparent 50%) top right/26px 26px no-repeat,linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,0) 45%),@BG_CARD;border:1px solid rgba(255,255,255,.08);border-left:4px solid @ACCENT;border-radius:6px 18px 6px 18px;padding:14px 20px;box-shadow:0 4px 12px rgba(0,0,0,.3);margin-bottom:6px;transition:transform .15s,box-shadow .15s}
+.content-box:hover,.metric-card:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.4),0 0 18px rgba(@ACCENT_RGB,.18)}
 .metric-card{border-left-width:1px;border-top:3px solid @ACCENT}
 .metric-card::after{content:"🐺";position:absolute;right:12px;bottom:-8px;font-size:62px;opacity:.08}
 .metric-title{font-size:13px;color:@TEXT_MUTED!important;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
@@ -273,37 +273,29 @@ li[role=option]:hover{background:@ACCENT!important}
 [data-testid=stSidebar] .st-key-logout button>div{justify-content:center!important}
 [data-testid=stSidebar] .st-key-logout button p{text-align:center!important}
 [data-testid=stSidebar] .st-key-logout button:hover{background:rgba(239,68,68,.25)!important;border-color:#EF4444!important;transform:none}
-.member-card{min-height:104px}
 
-/* --- FIX FÜR DEN BEARBEITUNGS-STIFT (TEAM-ÜBERSICHT) --- */
-.member-row { position: relative; margin-bottom: 10px; }
-[class*="st-key-edit_"] {
-    position: absolute;
-    right: 20px;
-    top: 26px;
-    z-index: 10;
+/* --- TEAM-ÜBERSICHT: KOMPAKT & KLICKBAR --- */
+.member-card-wrapper { margin-bottom: 6px; }
+.member-card-wrapper [data-testid=stPopover] { width: 100%; }
+.member-card-wrapper [data-testid=stPopover] > button {
+    width: 100% !important;
+    text-align: left !important;
+    background: linear-gradient(225deg,rgba(@ACCENT_RGB,.6) 50%,transparent 50%) top right/26px 26px no-repeat,linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,0) 45%),@BG_CARD !important;
+    border: 1px solid rgba(255,255,255,.08) !important;
+    border-left: 4px solid @ACCENT !important;
+    border-radius: 6px 18px 6px 18px !important;
+    padding: 12px 18px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,.3) !important;
+    transition: transform .15s, box-shadow .15s !important;
+    color: @TEXT_MAIN !important;
+    min-height: auto !important;
 }
-[class*="st-key-edit_"] button {
-    width: 32px;
-    height: 32px;
-    min-height: 32px !important;
-    padding: 0 !important;
-    border-radius: 50% !important;
-    background: rgba(255,255,255,.07) !important;
-    border: 1px solid rgba(@ACCENT_RGB,.55) !important;
-    box-shadow: none !important;
-    transition: all .15s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.member-card-wrapper [data-testid=stPopover] > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(0,0,0,.4), 0 0 18px rgba(@ACCENT_RGB,.18) !important;
+    border-color: rgba(@ACCENT_RGB,.4) !important;
 }
-[class*="st-key-edit_"] button:hover {
-    background: rgba(@ACCENT_RGB,.30) !important;
-    transform: scale(1.1);
-}
-[class*="st-key-edit_"] button svg {
-    display: none;
-}
+.member-card-wrapper [data-testid=stPopover] > button div { width: 100%; }
 
 [data-testid=stPopoverBody]{min-width:360px;background:@BG_CARD!important;color:@TEXT_MAIN!important;border:1px solid rgba(@ACCENT_RGB,.35)!important;border-radius:6px 18px 6px 18px!important}
 div[data-baseweb=select] div{background:@BG_INPUT!important;color:@TEXT_MAIN!important}
@@ -487,18 +479,21 @@ elif key == "team":
     shown = [m for m in data["members"] if q in m["name"].lower() and sf in ("Alle", m["status"])]
 
     for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
-        st.markdown(f"<div class='member-row'>", unsafe_allow_html=True)
-        show(f"<div style='display:flex;justify-content:space-between;align-items:center;padding-right:40px;'><div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
-             f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
-             f"<div>{badge(m['rank'])}</div></div>", "member-card")
+        card_inner = (f"<div style='display:flex;justify-content:space-between;align-items:center;width:100%'>"
+                      f"<div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
+                      f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
+                      f"<div>{badge(m['rank'])}</div></div>")
         
+        st.markdown(f"<div class='member-card-wrapper'>", unsafe_allow_html=True)
         if can_write:
-            with st.container(key=f"edit_{m['id']}"), st.popover("✏️"):
+            with st.popover(card_inner, use_container_width=True):
+                st.markdown(f"### ✏️ {esc(m['name'])} bearbeiten")
                 a, b = st.columns(2)
                 nr = a.selectbox("Rang", RANKS, index=RANKS.index(m["rank"]) if m["rank"] in RANKS else 0, key=f"r{m['id']}")
                 ns = b.selectbox("Status", MEMBER_STATUS, index=MEMBER_STATUS.index(m["status"]) if m["status"] in MEMBER_STATUS else 0, key=f"s{m['id']}")
                 if st.button("💾 Speichern", key=f"sv{m['id']}"):
                     update("members", m["id"], f"{m['name']}: {nr}/{ns}", rank=nr, status=ns)
+                st.markdown("---")
                 st.markdown("**Aus dem Team entfernen**")
                 why = st.text_area("Grund (Pflicht)", key=f"why{m['id']}", height=80)
                 if st.button("🚪 Entfernen & archivieren", key=f"rm{m['id']}"):
@@ -511,7 +506,9 @@ elif key == "team":
                                                  "removed": date.today().isoformat(), "reason": why.strip(),
                                                  "removed_by": user["username"]})
                         st.rerun()
-        st.markdown(f"</div>", unsafe_allow_html=True)
+        else:
+            show(card_inner)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # --- EHEMALIGE ---
 elif key == "archive":
