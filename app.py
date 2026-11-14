@@ -56,7 +56,7 @@ THEMES = {
         "BG_MAIN": "#140A0F", "BG_SIDEBAR": "#210F17", "BG_CARD": "#331824", "BG_INPUT": "#40202E", "ACCENT": "#FB7185", "ACCENT_HOVER": "#F43F5E", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#E2B8C9"
     },
     "15. Hacker Acid (Limette-Giftgrün)": {
-        "BG_MAIN": "#0E1009", "BG_SIDEBAR": "#171A0F", "BG_CARD": "#252B17", "BG_INPUT": "#30381F", "ACCENT": "#84CC16", "ACCENT_HOVER": "#65A30D", "TEXT_MAIN": "#FFFFFF", "TEXT_CBD5E1": "#CBD5E1"
+        "BG_MAIN": "#0E1009", "BG_SIDEBAR": "#171A0F", "BG_CARD": "#252B17", "BG_INPUT": "#30381F", "ACCENT": "#84CC16", "ACCENT_HOVER": "#65A30D", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#CBD5E1"
     }
 }
 
@@ -111,7 +111,7 @@ if current_theme_name not in THEMES:
     current_theme_name = "1. Wolf Life Dark (Rot-Dunkel Standard)"
 t = THEMES[current_theme_name]
 
-# --- CSS: DESIGN, DAUERHAFT GRAUE ELEMENTE & GRÖSSERE NAVIGATION ---
+# --- CSS: DESIGN, DAUERHAFT GRAUE EXPANDER/ELEMENTE & GRÖSSERE NAVIGATION ---
 st.markdown(f"""
 <style>
     .stApp {{
@@ -142,14 +142,34 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
     
-    /* Expander */
-    [data-testid="stExpander"] {{
+    /* EXPANDER FIX: Immer grau, auch wenn aufgeklappt und NICHT gehovert */
+    [data-testid="stExpander"],
+    [data-testid="stExpander"] details,
+    [data-testid="stExpander"] details[open],
+    [data-testid="stExpander"] summary,
+    [data-testid="stExpander"] details[open] > summary,
+    [data-testid="stExpander"] summary:hover,
+    [data-testid="stExpander"] summary:focus,
+    [data-testid="stExpander"] summary:active,
+    [data-testid="stExpanderDetails"] {{
         background-color: {t["BG_CARD"]} !important;
+        color: {t["TEXT_MAIN"]} !important;
+    }}
+    [data-testid="stExpander"] {{
         border: 1px solid rgba(255, 255, 255, 0.08) !important;
         border-radius: 12px !important;
+        overflow: hidden !important;
     }}
-    [data-testid="stExpander"] summary span {{
+    [data-testid="stExpander"] summary {{
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+    }}
+    [data-testid="stExpander"] summary:hover {{
+        background-color: {t["BG_INPUT"]} !important;
+    }}
+    [data-testid="stExpander"] summary span,
+    [data-testid="stExpander"] summary svg {{
         color: {t["TEXT_MAIN"]} !important;
+        fill: {t["TEXT_MAIN"]} !important;
         font-weight: 600 !important;
     }}
 
@@ -195,23 +215,22 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
 
-    /* EINGABEFELDER & PASSWORT-AUGEN FIX (Dauerhaft Grau statt Weiß beim Hover) */
+    /* EINGABEFELDER & PASSWORT-AUGEN FIX (Dauerhaft Grau statt Weiß) */
     input, textarea, select, 
     div[data-baseweb="input"], div[data-baseweb="select"], 
-    div[data-baseweb="base-input"], span[data-baseweb="tag"] {{
+    div[data-baseweb="base-input"], span[data-baseweb="tag"],
+    [data-testid="stTextInput"] button {{
         background-color: {t["BG_INPUT"]} !important;
         color: {t["TEXT_MAIN"]} !important;
         border-color: rgba(255, 255, 255, 0.1) !important;
     }}
     
-    /* Erzwinge einheitliches Grau für Input-Container und Fokus */
     .stTextInput input, .stTextArea textarea, .stSelectbox select {{
         background-color: {t["BG_INPUT"]} !important;
         color: {t["TEXT_MAIN"]} !important;
     }}
     
-    /* Das Passwort-Auge & Icons im Input-Bereich anpassen */
-    button[kind="header"] svg, [data-baseweb="icon"] svg {{
+    button[kind="header"] svg, [data-baseweb="icon"] svg, [data-testid="stTextInput"] button svg {{
         fill: {t["TEXT_MUTED"]} !important;
         color: {t["TEXT_MUTED"]} !important;
     }}
@@ -275,7 +294,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # --- SIDEBAR ---
-st.sidebar.markdown(f"### 🐺 WOLF LIFE")
+st.sidebar.markdown("### 🐺 WOLF LIFE")
 st.sidebar.markdown(f"<span style='color:{t['TEXT_MUTED']}; font-size:14px;'>Eingeloggt als:</span><br><strong style='font-size:16px;'>{st.session_state.username}</strong>", unsafe_allow_html=True)
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
@@ -355,7 +374,7 @@ if active_key == "dashboard":
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("🛡️ Rang-Verteilung")
-        st.markdown(f"<div class='content-box'>", unsafe_allow_html=True)
+        st.markdown("<div class='content-box'>", unsafe_allow_html=True)
         has_ranks = False
         for r in RANKS:
             count = len([m for m in data["members"] if m["rank"] == r])
@@ -369,7 +388,7 @@ if active_key == "dashboard":
         
     with c2:
         st.subheader("📅 Aktuelle Abmeldungen")
-        st.markdown(f"<div class='content-box'>", unsafe_allow_html=True)
+        st.markdown("<div class='content-box'>", unsafe_allow_html=True)
         if not data["absences"]:
             st.markdown(f"<span style='color:{t['TEXT_MUTED']};'>Keine aktuellen Abmeldungen vorhanden.</span>", unsafe_allow_html=True)
         else:
