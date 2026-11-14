@@ -71,11 +71,21 @@ RANKS = [
 ]
 
 RANK_COLORS = {
-    "Owner": "#A855F7", "Projektleitung": "#FF69B4", "stellvertretende Projektleitung": "#FF69B4",
-    "Teamleitung": "#FF7B00", "stellvertretende Teamleitung": "#FF7B00",
-    "Administrator": "#FF2A2A", "Test-Administrator": "#FF2A2A",
-    "Moderator 3": "#3B82F6", "Moderator 2": "#3B82F6", "Moderator 1": "#3B82F6", "Test-Moderator": "#3B82F6",
-    "Supporter 3": "#EAB308", "Supporter 2": "#EAB308", "Supporter 1": "#EAB308", "Test-Supporter": "#EAB308"
+    "Owner": "#A855F7",                          # Lila
+    "Projektleitung": "#FF69B4",                 # Pink
+    "stellvertretende Projektleitung": "#FF69B4", # Pink
+    "Teamleitung": "#FF7B00",                    # Neon-Orange
+    "stellvertretende Teamleitung": "#FF7B00",    # Neon-Orange
+    "Administrator": "#FF2A2A",                  # Signalrot
+    "Test-Administrator": "#FF2A2A",             # Signalrot
+    "Moderator 3": "#3B82F6",                    # Blau
+    "Moderator 2": "#3B82F6",                    # Blau
+    "Moderator 1": "#3B82F6",                    # Blau
+    "Test-Moderator": "#3B82F6",                 # Blau
+    "Supporter 3": "#EAB308",                    # Gelb
+    "Supporter 2": "#EAB308",                    # Gelb
+    "Supporter 1": "#EAB308",                    # Gelb
+    "Test-Supporter": "#EAB308"                  # Gelb
 }
 
 def load_data():
@@ -111,7 +121,7 @@ if current_theme_name not in THEMES:
     current_theme_name = "1. Wolf Life Dark (Rot-Dunkel Standard)"
 t = THEMES[current_theme_name]
 
-# --- CSS: DESIGN & EXPANDER ---
+# --- KOMPLETTES CSS (INKL. FIX FÜR DROP-DOWN & SELECTIONS) ---
 st.markdown(f"""
 <style>
     .stApp {{
@@ -137,7 +147,8 @@ st.markdown(f"""
         gap: 8px;
     }}
 
-    h1, h2, h3, h4, h5, h6, p, span, label, div {{
+    /* Allgemeine Texte weiß, AUSSER Elemente mit expliziten Rangfarben */
+    h1, h2, h3, h4, h5, h6, p, span:not([style*="color"]), label, div {{
         color: {t["TEXT_MAIN"]} !important;
     }}
     
@@ -200,10 +211,12 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
 
-    /* Inputs & Passwort-Auge */
+    /* INPUTS, SELECTBOXEN & DROPDOWNS (Komplett dunkel, kein weißer Bildschirm mehr) */
     input, textarea, select, 
     div[data-baseweb="input"], div[data-baseweb="select"], 
-    div[data-baseweb="base-input"], span[data-baseweb="tag"] {{
+    div[data-baseweb="base-input"], span[data-baseweb="tag"],
+    ul[data-baseweb="menu"], li[data-baseweb="option"],
+    div[data-baseweb="popover"] {{
         background-color: {t["BG_INPUT"]} !important;
         color: {t["TEXT_MAIN"]} !important;
         border-color: rgba(255, 255, 255, 0.1) !important;
@@ -214,6 +227,16 @@ st.markdown(f"""
         color: {t["TEXT_MAIN"]} !important;
     }}
     
+    /* Dropdown Menü-Einträge beim Öffnen zwingend dunkel */
+    li[role="option"] {{
+        background-color: {t["BG_INPUT"]} !important;
+        color: {t["TEXT_MAIN"]} !important;
+    }}
+    li[role="option"]:hover {{
+        background-color: {t["ACCENT"]} !important;
+        color: #FFFFFF !important;
+    }}
+
     .stTextInput div[data-baseweb="input"] {{
         background-color: {t["BG_INPUT"]} !important;
         border-radius: 8px !important;
@@ -266,7 +289,7 @@ tabs_meta = [
     ("accounts", "🔑 Benutzer & Rechte")
 ]
 
-# --- SIDEBAR WIRD JETZT IMMER GEZEIGT (FEST & SICHER) ---
+# --- SIDEBAR NAVIGATION ---
 st.sidebar.markdown("### 🐺 WOLF LIFE")
 
 if st.session_state.logged_in:
@@ -314,7 +337,7 @@ def get_member_choices():
     if not members: return ["Kein Mitglied eingetragen"]
     return [f"{m['name']} ({m['rank']})" for m in members]
 
-# --- LOGIN SCREEN (FALLS NICHT EINGELOGGT) ---
+# --- LOGIN SCREEN ---
 if not st.session_state.logged_in:
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.2, 1])
