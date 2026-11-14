@@ -32,6 +32,25 @@ _T = [
 _KEYS = ["BG_MAIN", "BG_SIDEBAR", "BG_CARD", "BG_INPUT", "ACCENT", "ACCENT_HOVER", "TEXT_MUTED"]
 THEMES = {n: dict(zip(_KEYS, v), TEXT_MAIN="#FFFFFF") for n, *v in _T}
 
+# --- FESTE ZUORDNUNG DER 15 HINTERGRUNDBILDER IM ORDNER "themes_bg" ---
+THEME_BG_MAP = {
+    DEFAULT_THEME: "theme_01_wolflife_dark.jpg",
+    "2. Midnight Blue (Blau-Taktisch)": "theme_02_midnight_blue.jpg",
+    "3. Blood Moon (Rot-Karmesin)": "theme_03_blood_moon.jpg",
+    "4. Cyberpunk Neon (Pink-Violett)": "theme_04_cyberpunk_neon.jpg",
+    "5. Emerald Syndicate (Grün-Smaragd)": "theme_05_emerald_syndicate.jpg",
+    "6. Matrix Terminal (Grün-Neon)": "theme_06_matrix_terminal.jpg",
+    "7. Golden Royalty (Gold-Gelb)": "theme_07_golden_royalty.jpg",
+    "8. Purple Haze (Lila-Mystic)": "theme_08_purple_haze.jpg",
+    "9. Steel Gray (Grau-Neutral)": "theme_09_steel_gray.jpg",
+    "10. Deep Ocean (Blau-Ozean)": "theme_10_deep_ocean.jpg",
+    "11. Sunset Orange (Orange-Warm)": "theme_11_sunset_orange.jpg",
+    "12. Coffee Dark (Braun-Kaffee)": "theme_12_coffee_dark.jpg",
+    "13. Arctic Frost (Türkis-Eis)": "theme_13_arctic_frost.jpg",
+    "14. Vampire Rose (Rosa-Beeren)": "theme_14_vampire_rose.jpg",
+    "15. Hacker Acid (Limette-Giftgrün)": "theme_15_hacker_acid.jpg",
+}
+
 RANKS = [
     "Owner", "Projektleitung", "stellvertretende Projektleitung",
     "Teamleitung", "stellvertretende Teamleitung",
@@ -185,7 +204,7 @@ def authenticate(name, pw):
     if u.get("pw_hash"):
         ok = check_pw(pw, u["pw_hash"])
     elif u.get("password") is not None and hmac.compare_digest(str(u["password"]).encode(), pw.encode()):
-        ok = True  # Altes Klartext-Passwort: automatisch auf Hash umstellen
+        ok = True
         with edit() as d:
             for x in d["users"]:
                 if x["username"] == u["username"]:
@@ -285,38 +304,34 @@ st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 
 # --- DYNAMISCHE THEME-HINTERGRÜNDE (THEMES_BG ORDNER) ---
-THEME_BG_FOLDER = "themes_bg"
+THEME_BG_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "themes_bg")
 
 def get_theme_bg_style(current_theme_name):
     if not os.path.exists(THEME_BG_FOLDER):
         return ""
-    files = os.listdir(THEME_BG_FOLDER)
-    matching_file = None
-    safe_theme_name = current_theme_name.split(".")[0].strip()
     
-    for f in files:
-        if f.lower().startswith(safe_theme_name.lower()) and f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-            matching_file = f
-            break
-    if not matching_file:
-        for f in files:
-            if current_theme_name.lower() in f.lower() and f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                matching_file = f
+    expected_file = THEME_BG_MAP.get(current_theme_name)
+    matching_path = None
+    
+    if expected_file:
+        # Prüfe exakten Dateinamen sowie alternative Bildendungen (.png, .jpeg, .webp)
+        base_name = os.path.splitext(expected_file)[0]
+        for ext in (".jpg", ".png", ".jpeg", ".webp", ".JPG", ".PNG"):
+            candidate = os.path.join(THEME_BG_FOLDER, base_name + ext)
+            if os.path.exists(candidate):
+                matching_path = candidate
                 break
 
-    if not matching_file:
+    if not matching_path:
         return ""
 
-    img_path = os.path.join(THEME_BG_FOLDER, matching_file)
-    with open(img_path, "rb") as f:
-        encoded = base64.b64encode(f.read()).decode()
-    
-    ext = matching_file.split('.')[-1].lower()
-    mime_type = "image/png" if ext == "png" else "image/jpeg"
+    encoded = _b64(matching_path)
+    ext = os.path.splitext(matching_path)[1].lower()
+    mime_type = "image/png" if ext == ".png" else ("image/webp" if ext == ".webp" else "image/jpeg")
     
     return f"""
     .stApp {{
-        background: linear-gradient(rgba(13, 13, 17, 0.88), rgba(13, 13, 17, 0.88)), 
+        background: linear-gradient(rgba(13, 13, 17, 0.85), rgba(13, 13, 17, 0.85)), 
                     url("data:{mime_type};base64,{encoded}") no-repeat center center fixed !important;
         background-size: cover !important;
     }}
@@ -337,11 +352,11 @@ if not any(u.get("is_admin") for u in data["users"]):
         st.subheader("🐺 Ersteinrichtung")
         st.caption("Lege den ersten Administrator an.")
         n = st.text_input("Benutzername")
-        p1 = st.text_input("Passwort (min. 10 Zeichen)", type="password")
+        p1 = st.text_input("Passwort (min. 3 Zeichen)", type="password")
         p2 = st.text_input("Passwort wiederholen", type="password")
         if st.form_submit_button("Administrator anlegen", use_container_width=True):
-            if len(n.strip()) < 3 or len(p1) < 10 or p1 != p2:
-                st.error("Benutzername min. 3 Zeichen, Passwort min. 10 Zeichen, beide Passwörter gleich.")
+            if len(n.strip()) < 3 or len(p1) < 3 or p1 != p2:
+                st.error("Benutzername min. 3 Zeichen, Passwort min. 3 Zeichen, beide Passwörter gleich.")
             else:
                 with edit("Administrator angelegt") as d:
                     d["users"].append({"username": n.strip(), "pw_hash": hash_pw(p1), "is_admin": True, "permissions": {}})
@@ -713,12 +728,12 @@ elif key == "settings":
     st.subheader("🔐 Passwort ändern")
     with st.form("pw"):
         old = st.text_input("Aktuelles Passwort", type="password")
-        new = st.text_input("Neues Passwort (min. 10 Zeichen)", type="password")
+        new = st.text_input("Neues Passwort (min. 3 Zeichen)", type="password")
         if st.form_submit_button("Passwort ändern"):
-            if authenticate(user["username"], old) and len(new) >= 10:
+            if authenticate(user["username"], old) and len(new) >= 3:
                 set_password(user["username"], new, "Passwort geändert")
                 st.success("Passwort geändert.")
-            else: st.error("Aktuelles Passwort falsch oder neues Passwort zu kurz.")
+            else: st.error("Aktuelles Passwort falsch oder neues Passwort zu kurz (min. 3 Zeichen).")
 
 # --- BENUTZER & RECHTE ---
 elif key == "accounts":
@@ -729,13 +744,13 @@ elif key == "accounts":
     with st.expander("➕ Benutzer anlegen"):
         with st.form("add_user", clear_on_submit=True):
             un = st.text_input("Benutzername")
-            up = st.text_input("Start-Passwort (min. 10 Zeichen)", type="password")
+            up = st.text_input("Start-Passwort (min. 3 Zeichen)", type="password")
             ua = st.checkbox("Administrator (voller Zugriff)")
             cols = st.columns(3)
             perms = {k: cols[i % 3].selectbox(l, PERM_OPTS, format_func=lambda x: PERM_LABELS[x], index=1, key=f"p_{k}")
                      for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings")}
             if st.form_submit_button("Anlegen", use_container_width=True):
-                if len(un.strip()) < 3 or len(up) < 10: st.error("Benutzername min. 3, Passwort min. 10 Zeichen.")
+                if len(un.strip()) < 3 or len(up) < 3: st.error("Benutzername min. 3, Passwort min. 3 Zeichen.")
                 elif un.strip().lower() in [u["username"].lower() for u in data["users"]]: st.error("Benutzername existiert bereits.")
                 else:
                     with edit(f"Benutzer {un.strip()} angelegt") as d:
@@ -778,12 +793,12 @@ elif key == "accounts":
                             x["is_admin"] = adm
                 st.success("Rechte gespeichert.")
             st.markdown("---")
-            np_ = st.text_input("Neues Passwort setzen", type="password", key=f"np_{u['username']}")
+            np_ = st.text_input("Neues Passwort setzen (min. 3 Zeichen)", type="password", key=f"np_{u['username']}")
             if st.button("🔑 Passwort zurücksetzen", key=f"rp_{u['username']}"):
-                if len(np_) >= 10:
+                if len(np_) >= 3:
                     set_password(u["username"], np_, f"Passwort von {u['username']} zurückgesetzt")
                     st.success("Passwort gesetzt.")
-                else: st.error("Mindestens 10 Zeichen.")
+                else: st.error("Mindestens 3 Zeichen.")
             if u["username"] != user["username"] and st.button("🗑 Benutzer löschen", key=f"du_{u['username']}"):
                 with edit(f"Benutzer {u['username']} gelöscht") as d:
                     d["users"] = [x for x in d["users"] if x["username"] != u["username"]]
