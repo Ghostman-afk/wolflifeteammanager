@@ -1,575 +1,532 @@
 import streamlit as st
-import json
-import os
-from datetime import datetime
+import json, os, uuid, time, hmac, hashlib, secrets, threading, shutil
+from contextlib import contextmanager
+from datetime import datetime, date
+from html import escape as esc
 
-# --- SEITENKONFIGURATION ---
-st.set_page_config(
-    page_title="Wolf Life Team-Management",
-    page_icon="🐺",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# --- 15 OPTIMIERTE DESIGN-THEMES (FARBVARIANTEN) ---
-THEMES = {
-    "1. Wolf Life Dark (Rot-Dunkel Standard)": {
-        "BG_MAIN": "#0D0D11", "BG_SIDEBAR": "#14141A", "BG_CARD": "#1C1C24", "BG_INPUT": "#22222D", "ACCENT": "#EF4444", "ACCENT_HOVER": "#DC2626", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#9CA3AF"
-    },
-    "2. Midnight Blue (Blau-Taktisch)": {
-        "BG_MAIN": "#090D16", "BG_SIDEBAR": "#111827", "BG_CARD": "#1E293B", "BG_INPUT": "#2A3748", "ACCENT": "#3B82F6", "ACCENT_HOVER": "#2563EB", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#94A3B8"
-    },
-    "3. Blood Moon (Rot-Karmesin)": {
-        "BG_MAIN": "#120808", "BG_SIDEBAR": "#1F0D0D", "BG_CARD": "#2C1515", "BG_INPUT": "#381B1B", "ACCENT": "#EF4444", "ACCENT_HOVER": "#DC2626", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#B89999"
-    },
-    "4. Cyberpunk Neon (Pink-Violett)": {
-        "BG_MAIN": "#0A0814", "BG_SIDEBAR": "#131022", "BG_CARD": "#1F1A38", "BG_INPUT": "#29224A", "ACCENT": "#F43F5E", "ACCENT_HOVER": "#E11D48", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#A89EC9"
-    },
-    "5. Emerald Syndicate (Grün-Smaragd)": {
-        "BG_MAIN": "#05100C", "BG_SIDEBAR": "#0A1C15", "BG_CARD": "#132E23", "BG_INPUT": "#1A3E31", "ACCENT": "#10B981", "ACCENT_HOVER": "#059669", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#9CA3AF"
-    },
-    "6. Matrix Terminal (Grün-Neon)": {
-        "BG_MAIN": "#030A05", "BG_SIDEBAR": "#07170B", "BG_CARD": "#0F2914", "BG_INPUT": "#14361C", "ACCENT": "#22C55E", "ACCENT_HOVER": "#16A34A", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#9CA3AF"
-    },
-    "7. Golden Royalty (Gold-Gelb)": {
-        "BG_MAIN": "#12100B", "BG_SIDEBAR": "#1C1912", "BG_CARD": "#2B261A", "BG_INPUT": "#363022", "ACCENT": "#EAB308", "ACCENT_HOVER": "#CA8A04", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#B3AB94"
-    },
-    "8. Purple Haze (Lila-Mystic)": {
-        "BG_MAIN": "#0D0A14", "BG_SIDEBAR": "#161124", "BG_CARD": "#221A38", "BG_INPUT": "#2D2447", "ACCENT": "#A855F7", "ACCENT_HOVER": "#9333EA", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#B4ADC9"
-    },
-    "9. Steel Gray (Grau-Neutral)": {
-        "BG_MAIN": "#0F0F10", "BG_SIDEBAR": "#18181B", "BG_CARD": "#27272A", "BG_INPUT": "#333338", "ACCENT": "#71717A", "ACCENT_HOVER": "#52525B", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#A1A1AA"
-    },
-    "10. Deep Ocean (Blau-Ozean)": {
-        "BG_MAIN": "#060E17", "BG_SIDEBAR": "#0F1E2E", "BG_CARD": "#172F47", "BG_INPUT": "#203D5C", "ACCENT": "#0EA5E9", "ACCENT_HOVER": "#0284C7", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#93C5FD"
-    },
-    "11. Sunset Orange (Orange-Warm)": {
-        "BG_MAIN": "#120B07", "BG_SIDEBAR": "#1F130B", "BG_CARD": "#301D11", "BG_INPUT": "#3D2719", "ACCENT": "#F97316", "ACCENT_HOVER": "#EA580C", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#D1B5A3"
-    },
-    "12. Coffee Dark (Braun-Kaffee)": {
-        "BG_MAIN": "#110C0A", "BG_SIDEBAR": "#1C1411", "BG_CARD": "#2B1E1A", "BG_INPUT": "#362723", "ACCENT": "#D97706", "ACCENT_HOVER": "#B45309", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#C4B5A5"
-    },
-    "13. Arctic Frost (Türkis-Eis)": {
-        "BG_MAIN": "#091217", "BG_SIDEBAR": "#0F1E26", "BG_CARD": "#172E3B", "BG_INPUT": "#1F3D4D", "ACCENT": "#06B6D4", "ACCENT_HOVER": "#0891B2", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#A5F3FC"
-    },
-    "14. Vampire Rose (Rosa-Beeren)": {
-        "BG_MAIN": "#140A0F", "BG_SIDEBAR": "#210F17", "BG_CARD": "#331824", "BG_INPUT": "#40202E", "ACCENT": "#FB7185", "ACCENT_HOVER": "#F43F5E", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#E2B8C9"
-    },
-    "15. Hacker Acid (Limette-Giftgrün)": {
-        "BG_MAIN": "#0E1009", "BG_SIDEBAR": "#171A0F", "BG_CARD": "#252B17", "BG_INPUT": "#30381F", "ACCENT": "#84CC16", "ACCENT_HOVER": "#65A30D", "TEXT_MAIN": "#FFFFFF", "TEXT_MUTED": "#CBD5E1"
-    }
-}
+st.set_page_config(page_title="Wolf Life Team-Management", page_icon="🐺", layout="wide")
 
 DATA_FILE = "wolflife_team_data.json"
+DEFAULT_THEME = "1. Wolf Life Dark (Rot-Dunkel Standard)"
+
+# --- THEMES: Name, BG_MAIN, BG_SIDEBAR, BG_CARD, BG_INPUT, ACCENT, ACCENT_HOVER, TEXT_MUTED ---
+_T = [
+    (DEFAULT_THEME, "#0D0D11", "#14141A", "#1C1C24", "#22222D", "#EF4444", "#DC2626", "#9CA3AF"),
+    ("2. Midnight Blue (Blau-Taktisch)", "#090D16", "#111827", "#1E293B", "#2A3748", "#3B82F6", "#2563EB", "#94A3B8"),
+    ("3. Blood Moon (Rot-Karmesin)", "#120808", "#1F0D0D", "#2C1515", "#381B1B", "#EF4444", "#DC2626", "#B89999"),
+    ("4. Cyberpunk Neon (Pink-Violett)", "#0A0814", "#131022", "#1F1A38", "#29224A", "#F43F5E", "#E11D48", "#A89EC9"),
+    ("5. Emerald Syndicate (Grün-Smaragd)", "#05100C", "#0A1C15", "#132E23", "#1A3E31", "#10B981", "#059669", "#9CA3AF"),
+    ("6. Matrix Terminal (Grün-Neon)", "#030A05", "#07170B", "#0F2914", "#14361C", "#22C55E", "#16A34A", "#9CA3AF"),
+    ("7. Golden Royalty (Gold-Gelb)", "#12100B", "#1C1912", "#2B261A", "#363022", "#EAB308", "#CA8A04", "#B3AB94"),
+    ("8. Purple Haze (Lila-Mystic)", "#0D0A14", "#161124", "#221A38", "#2D2447", "#A855F7", "#9333EA", "#B4ADC9"),
+    ("9. Steel Gray (Grau-Neutral)", "#0F0F10", "#18181B", "#27272A", "#333338", "#71717A", "#52525B", "#A1A1AA"),
+    ("10. Deep Ocean (Blau-Ozean)", "#060E17", "#0F1E2E", "#172F47", "#203D5C", "#0EA5E9", "#0284C7", "#93C5FD"),
+    ("11. Sunset Orange (Orange-Warm)", "#120B07", "#1F130B", "#301D11", "#3D2719", "#F97316", "#EA580C", "#D1B5A3"),
+    ("12. Coffee Dark (Braun-Kaffee)", "#110C0A", "#1C1411", "#2B1E1A", "#362723", "#D97706", "#B45309", "#C4B5A5"),
+    ("13. Arctic Frost (Türkis-Eis)", "#091217", "#0F1E26", "#172E3B", "#1F3D4D", "#06B6D4", "#0891B2", "#A5F3FC"),
+    ("14. Vampire Rose (Rosa-Beeren)", "#140A0F", "#210F17", "#331824", "#40202E", "#FB7185", "#F43F5E", "#E2B8C9"),
+    ("15. Hacker Acid (Limette-Giftgrün)", "#0E1009", "#171A0F", "#252B17", "#30381F", "#84CC16", "#65A30D", "#CBD5E1"),
+]
+_KEYS = ["BG_MAIN", "BG_SIDEBAR", "BG_CARD", "BG_INPUT", "ACCENT", "ACCENT_HOVER", "TEXT_MUTED"]
+THEMES = {n: dict(zip(_KEYS, v), TEXT_MAIN="#FFFFFF") for n, *v in _T}
 
 RANKS = [
     "Owner", "Projektleitung", "stellvertretende Projektleitung",
     "Teamleitung", "stellvertretende Teamleitung",
     "Administrator", "Test-Administrator",
     "Moderator 3", "Moderator 2", "Moderator 1", "Test-Moderator",
-    "Supporter 3", "Supporter 2", "Supporter 1", "Test-Supporter"
+    "Supporter 3", "Supporter 2", "Supporter 1", "Test-Supporter",
+]
+MEMBER_STATUS = ["Aktiv", "Probezeit", "Abgemeldet"]
+APP_STATUS = ["Bewerbung eingegangen", "Im Testgespräch", "Testphase läuft", "Angenommen", "Abgelehnt"]
+APP_ROLES = {"Supporter (Bewerbung)": "Test-Supporter", "Moderator (Bewerbung)": "Test-Moderator",
+             "Administrator (Bewerbung)": "Test-Administrator"}
+PRIOS = ["Hoch", "Mittel", "Niedrig"]
+TABS = [
+    ("dashboard", "📊 Dashboard"), ("team", "👥 Team-Übersicht"), ("applicants", "📋 Bewerber"),
+    ("warnings", "⚠️ Verwarnungen"), ("absences", "📅 Abmeldungen"), ("tasks", "✅ Aufgaben"),
+    ("protocols", "📝 Protokolle"), ("notes", "📌 Notizen"), ("settings", "⚙️ Einstellungen"),
+    ("accounts", "🔑 Benutzer & Rechte"),
 ]
 
-RANK_COLORS = {
-    "Owner": "#A855F7",                          # Lila
-    "Projektleitung": "#FF69B4",                 # Pink
-    "stellvertretende Projektleitung": "#FF69B4", # Pink
-    "Teamleitung": "#FF7B00",                    # Neon-Orange
-    "stellvertretende Teamleitung": "#FF7B00",    # Neon-Orange
-    "Administrator": "#FF2A2A",                  # Signalrot
-    "Test-Administrator": "#FF2A2A",             # Signalrot
-    "Moderator 3": "#3B82F6",                    # Blau
-    "Moderator 2": "#3B82F6",                    # Blau
-    "Moderator 1": "#3B82F6",                    # Blau
-    "Test-Moderator": "#3B82F6",                 # Blau
-    "Supporter 3": "#EAB308",                    # Gelb
-    "Supporter 2": "#EAB308",                    # Gelb
-    "Supporter 1": "#EAB308",                    # Gelb
-    "Test-Supporter": "#EAB308"                  # Gelb
-}
+
+def rank_color(r):
+    if r == "Owner": return "#A855F7"
+    if "Projektleitung" in r: return "#FF69B4"
+    if "Teamleitung" in r: return "#FF7B00"
+    if "Administrator" in r: return "#FF2A2A"
+    if "Moderator" in r: return "#3B82F6"
+    return "#EAB308"
+
+
+def uid(): return uuid.uuid4().hex
+
+
+def fmt(s):
+    try: return date.fromisoformat(s).strftime("%d.%m.%Y")
+    except Exception: return s or "-"
+
+
+# --- DATEN (atomar speichern, gesperrt, mit Backup) ---
+@st.cache_resource
+def _lock(): return threading.Lock()
+
+
+@st.cache_resource
+def _fails(): return {}
+
+
+DEFAULTS = {"members": [], "applicants": [], "warnings": [], "absences": [], "tasks": [],
+            "protocols": [], "notes": "", "users": [], "log": [], "settings": {}}
+
 
 def load_data():
-    default_data = {
-        "members": [], "applicants": [], "warnings": [],
-        "absences": [], "tasks": [], "protocols": [],
-        "notes": "", "users": [],
-        "settings": {"theme": "1. Wolf Life Dark (Rot-Dunkel Standard)"}
-    }
+    d = {}
     if os.path.exists(DATA_FILE):
         try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-                for key in default_data:
-                    if key not in loaded:
-                        loaded[key] = default_data[key]
-                return loaded
+            with open(DATA_FILE, encoding="utf-8") as f: d = json.load(f)
         except Exception:
-            pass
-    return default_data
+            shutil.copy(DATA_FILE, f"{DATA_FILE}.defekt-{int(time.time())}")
+            st.error("Die Datendatei ist beschädigt. Eine Kopie wurde gesichert – bitte Datei prüfen.")
+            st.stop()
+    for k, v in DEFAULTS.items(): d.setdefault(k, json.loads(json.dumps(v)))
+    return d
 
-def save_data(data):
-    try:
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-    except Exception as e:
-        st.error(f"Fehler beim Speichern: {e}")
 
-data = load_data()
+def save_data(d):
+    tmp = DATA_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f: json.dump(d, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, DATA_FILE)
+    b = f"{DATA_FILE}.backup-{date.today()}"
+    if not os.path.exists(b): shutil.copy(DATA_FILE, b)
 
-current_theme_name = data.get("settings", {}).get("theme", "1. Wolf Life Dark (Rot-Dunkel Standard)")
-if current_theme_name not in THEMES:
-    current_theme_name = "1. Wolf Life Dark (Rot-Dunkel Standard)"
-t = THEMES[current_theme_name]
 
-# --- CSS STYLING ---
-st.markdown(f"""
-<style>
-    .stApp {{
-        background-color: {t["BG_MAIN"]};
-        color: {t["TEXT_MAIN"]};
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }}
-    
-    /* Sidebar */
-    [data-testid="stSidebar"] {{
-        background-color: {t["BG_SIDEBAR"]};
-        border-right: 1px solid rgba(255, 255, 255, 0.08);
-        min-width: 280px !important;
-    }}
-    
-    [data-testid="stSidebar"] .stRadio label {{
-        font-size: 16px !important;
-        font-weight: 600 !important;
-        padding: 6px 0px !important;
-        color: {t["TEXT_MAIN"]} !important;
-    }}
-    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] {{
-        gap: 8px;
-    }}
+@contextmanager
+def edit(action=None):
+    """Lädt frische Daten, lässt sie ändern und speichert – verhindert überschriebene Änderungen."""
+    with _lock():
+        d = load_data()
+        yield d
+        if action:
+            u = st.session_state.user["username"] if st.session_state.get("user") else "-"
+            d["log"] = (d["log"] + [{"ts": datetime.now().isoformat(timespec="seconds"), "user": u, "action": action}])[-500:]
+        save_data(d)
 
-    /* Allgemeine Texte weiß, AUSSER Elemente mit expliziten Rangfarben */
-    h1, h2, h3, h4, h5, h6, p, span:not([style*="color"]), label, div {{
-        color: {t["TEXT_MAIN"]} !important;
-    }}
-    
-    /* Expander dauerhaft dunkel-grau */
-    [data-testid="stExpander"],
-    [data-testid="stExpander"] details,
-    [data-testid="stExpander"] details[open],
-    [data-testid="stExpander"] summary,
-    [data-testid="stExpander"] details[open] > summary,
-    [data-testid="stExpander"] summary:hover,
-    [data-testid="stExpander"] summary:focus,
-    [data-testid="stExpander"] summary:active,
-    [data-testid="stExpanderDetails"] {{
-        background-color: {t["BG_CARD"]} !important;
-        color: {t["TEXT_MAIN"]} !important;
-    }}
-    [data-testid="stExpander"] {{
-        border: 1px solid rgba(255, 255, 255, 0.08) !important;
-        border-radius: 12px !important;
-        overflow: hidden !important;
-    }}
-    [data-testid="stExpander"] summary {{
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
-    }}
-    [data-testid="stExpander"] summary span,
-    [data-testid="stExpander"] summary svg {{
-        color: {t["TEXT_MAIN"]} !important;
-        fill: {t["TEXT_MAIN"]} !important;
-        font-weight: 600 !important;
-    }}
 
-    .metric-card, .content-box {{
-        background-color: {t["BG_CARD"]};
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
-        margin-bottom: 10px;
-    }}
-    .metric-title {{
-        font-size: 13px;
-        color: {t["TEXT_MUTED"]} !important;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 5px;
-    }}
-    .metric-value {{
-        font-size: 28px;
-        font-weight: 700;
-        color: {t["TEXT_MAIN"]} !important;
-    }}
-
-    [data-testid="stNotification"] {{
-        background-color: {t["BG_CARD"]} !important;
-        color: {t["TEXT_MAIN"]} !important;
-        border: 1px solid {t["ACCENT"]} !important;
-        border-radius: 10px;
-    }}
-    [data-testid="stNotification"] p {{
-        color: {t["TEXT_MAIN"]} !important;
-    }}
-
-    /* INPUTS, SELECTBOXEN & DROPDOWNS */
-    input, textarea, select, 
-    div[data-baseweb="input"], div[data-baseweb="select"], 
-    div[data-baseweb="base-input"], span[data-baseweb="tag"],
-    ul[data-baseweb="menu"], li[data-baseweb="option"],
-    div[data-baseweb="popover"] {{
-        background-color: {t["BG_INPUT"]} !important;
-        color: {t["TEXT_MAIN"]} !important;
-        border-color: rgba(255, 255, 255, 0.1) !important;
-    }}
-    
-    .stTextInput input, .stTextArea textarea, .stSelectbox select {{
-        background-color: {t["BG_INPUT"]} !important;
-        color: {t["TEXT_MAIN"]} !important;
-    }}
-    
-    li[role="option"] {{
-        background-color: {t["BG_INPUT"]} !important;
-        color: {t["TEXT_MAIN"]} !important;
-    }}
-    li[role="option"]:hover {{
-        background-color: {t["ACCENT"]} !important;
-        color: #FFFFFF !important;
-    }}
-
-    .stTextInput div[data-baseweb="input"] {{
-        background-color: {t["BG_INPUT"]} !important;
-        border-radius: 8px !important;
-    }}
-    
-    .stTextInput button, [data-testid="stTextInput"] button,
-    div[data-baseweb="input"] > div:last-child {{
-        background-color: transparent !important;
-        border: none !important;
-    }}
-    
-    button[kind="header"] svg, [data-baseweb="icon"] svg, [data-testid="stTextInput"] button svg {{
-        fill: {t["TEXT_MUTED"]} !important;
-        color: {t["TEXT_MUTED"]} !important;
-    }}
-
-    .stButton>button, button[kind="secondaryFormSubmit"], button[kind="primary"] {{
-        background-color: {t["ACCENT"]} !important;
-        color: #FFFFFF !important;
-        border-radius: 8px !important;
-        border: none !important;
-        font-weight: 600 !important;
-        padding: 0.5rem 1rem !important;
-        width: 100% !important;
-    }}
-    .stButton>button:hover, button[kind="secondaryFormSubmit"]:hover, button[kind="primary"]:hover {{
-        background-color: {t["ACCENT_HOVER"]} !important;
-        color: #FFFFFF !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    }}
-</style>
-""", unsafe_allow_html=True)
-
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-    st.session_state.username = ""
-    st.session_state.is_superadmin = False
-    st.session_state.permissions = {}
-
-tabs_meta = [
-    ("dashboard", "📊 Dashboard"),
-    ("team", "👥 Team-Übersicht"),
-    ("applicants", "📋 Bewerber"),
-    ("warnings", "⚠️ Verwarnungen"),
-    ("absences", "📅 Abmeldungen"),
-    ("tasks", "✅ Aufgaben"),
-    ("protocols", "📝 Protokolle"),
-    ("notes", "📌 Notizen"),
-    ("settings", "⚙️ Einstellungen"),
-    ("accounts", "🔑 Benutzer & Rechte")
-]
-
-# --- LOGIN-PRÜFUNG & SIDEBAR STEUERUNG ---
-if not st.session_state.logged_in:
-    # Solange NICHT eingeloggt: Sidebar komplett verstecken / leer lassen
-    st.sidebar.empty()
-    
-    # --- LOGIN SCREEN ---
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.2, 1])
-    with col2:
-        st.markdown(f"""
-        <div style="background-color: {t['BG_CARD']}; padding: 40px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 25px rgba(0,0,0,0.4);">
-            <h2 style='text-align: center; margin-bottom: 0px;'>🐺 WOLF LIFE</h2>
-            <p style='text-align: center; color: {t['ACCENT']}; font-weight: bold; font-size: 14px; margin-bottom: 25px;'>TEAM MANAGEMENT SUITE</p>
-        """, unsafe_allow_html=True)
-        
-        username_input = st.text_input("Benutzername")
-        password_input = st.text_input("Passwort", type="password")
-        
-        if st.button("Anmelden", use_container_width=True):
-            if username_input == "Admin" and password_input == "wolf123":
-                st.session_state.logged_in = True
-                st.session_state.username = "Admin"
-                st.session_state.is_superadmin = True
-                st.session_state.permissions = {k: "full" for k in ["dashboard", "team", "applicants", "warnings", "absences", "tasks", "protocols", "notes", "accounts", "settings"]}
-                st.rerun()
-            else:
-                user_found = next((u for u in data.get("users", []) if u["username"] == username_input and u["password"] == password_input), None)
-                if user_found:
-                    st.session_state.logged_in = True
-                    st.session_state.username = user_found["username"]
-                    st.session_state.is_superadmin = False
-                    st.session_state.permissions = user_found.get("permissions", {})
-                    st.rerun()
-                else:
-                    st.error("Falscher Benutzername oder falsches Passwort!")
-        st.markdown("</div>", unsafe_allow_html=True)
-    st.stop()
-
-# --- WENN EINGELOGGT: ECHTE SIDEBAR & NAVIGATION ANZEIGEN ---
-st.sidebar.markdown("### 🐺 WOLF LIFE")
-st.sidebar.markdown(f"<span style='color:{t['TEXT_MUTED']}; font-size:14px;>Eingeloggt als:</span><br><strong style='font-size:16px;'>{st.session_state.username}</strong>", unsafe_allow_html=True)
-st.sidebar.markdown("<br>", unsafe_allow_html=True)
-
-if st.sidebar.button("🔒 Abmelden", use_container_width=True):
-    st.session_state.logged_in = False
+def update(coll, iid, label, **ch):
+    with edit(label) as d:
+        for x in d[coll]:
+            if x["id"] == iid: x.update(ch)
     st.rerun()
 
+
+def remove(coll, iid, label):
+    with edit(label) as d: d[coll] = [x for x in d[coll] if x["id"] != iid]
+    st.rerun()
+
+
+# --- PASSWÖRTER & LOGIN-SCHUTZ ---
+def hash_pw(pw, salt=None):
+    salt = salt or secrets.token_bytes(16)
+    return salt.hex() + "$" + hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1).hex()
+
+
+def check_pw(pw, stored):
+    try: return hmac.compare_digest(hash_pw(pw, bytes.fromhex(stored.split("$")[0])), stored)
+    except Exception: return False
+
+
+def locked(name):
+    return _fails().get(name.strip().lower(), (0, 0))[1] > time.time()
+
+
+def register_fail(name):
+    k = name.strip().lower()
+    n = _fails().get(k, (0, 0))[0] + 1
+    _fails()[k] = (0, time.time() + 300) if n >= 5 else (n, 0)
+
+
+def authenticate(name, pw):
+    u = next((x for x in load_data()["users"] if x["username"].lower() == name.strip().lower()), None)
+    if not u:
+        hash_pw(pw)
+        return None
+    ok = False
+    if u.get("pw_hash"):
+        ok = check_pw(pw, u["pw_hash"])
+    elif u.get("password") is not None and hmac.compare_digest(str(u["password"]).encode(), pw.encode()):
+        ok = True  # Altes Klartext-Passwort: automatisch auf Hash umstellen
+        with edit() as d:
+            for x in d["users"]:
+                if x["username"] == u["username"]:
+                    x["pw_hash"] = hash_pw(pw)
+                    x.pop("password", None)
+    return u if ok else None
+
+
+def set_password(username, new_pw, label):
+    with edit(label) as d:
+        for x in d["users"]:
+            if x["username"] == username:
+                x["pw_hash"] = hash_pw(new_pw)
+                x.pop("password", None)
+
+
+# --- SESSION, THEME, CSS ---
+ss = st.session_state
+ss.setdefault("user", None)
+data = load_data()
+uname = ss.user["username"] if ss.user else None
+tname = data["settings"].get("themes", {}).get(uname) or DEFAULT_THEME
+t = THEMES.get(tname, THEMES[DEFAULT_THEME])
+
+CSS = """
+.stApp{background:@BG_MAIN;color:@TEXT_MAIN;font-family:'Segoe UI',Tahoma,sans-serif}
+[data-testid=stSidebar]{background:@BG_SIDEBAR;border-right:1px solid rgba(255,255,255,.08);min-width:280px!important}
+[data-testid=stSidebar] .stRadio label{font-size:16px!important;font-weight:600!important;padding:6px 0!important}
+h1,h2,h3,h4,h5,h6,p,label,span:not([style*="color"]){color:@TEXT_MAIN!important}
+[data-testid=stExpander],[data-testid=stExpander] details,[data-testid=stExpander] summary,[data-testid=stExpanderDetails]{background:@BG_CARD!important;color:@TEXT_MAIN!important}
+[data-testid=stExpander]{border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;overflow:hidden!important}
+.metric-card,.content-box{background:@BG_CARD;border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:20px;box-shadow:0 4px 6px -1px rgba(0,0,0,.2);margin-bottom:10px}
+.metric-title{font-size:13px;color:@TEXT_MUTED!important;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.metric-value{font-size:28px;font-weight:700}
+.content-box .muted,.muted{color:@TEXT_MUTED!important;font-size:12px}
+input,textarea,select,div[data-baseweb=input],div[data-baseweb=select],div[data-baseweb=base-input],span[data-baseweb=tag],ul[data-baseweb=menu],li[data-baseweb=option],div[data-baseweb=popover],li[role=option]{background:@BG_INPUT!important;color:@TEXT_MAIN!important;border-color:rgba(255,255,255,.1)!important}
+li[role=option]:hover{background:@ACCENT!important}
+.stButton>button,[data-testid=stFormSubmitButton] button,button[kind=secondaryFormSubmit]{background:@ACCENT!important;color:#fff!important;border:none!important;border-radius:8px!important;font-weight:600!important}
+.stButton>button:hover,[data-testid=stFormSubmitButton] button:hover{background:@ACCENT_HOVER!important}
+"""
+for k in sorted(t, key=len, reverse=True): CSS = CSS.replace("@" + k, t[k])
+st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
+
+
+def show(h): st.markdown(f"<div class='content-box'>{h}</div>", unsafe_allow_html=True)
+
+
+# --- ERSTEINRICHTUNG & LOGIN ---
+if not any(u.get("is_admin") for u in data["users"]):
+    c = st.columns([1, 1.2, 1])[1]
+    with c.form("setup"):
+        st.subheader("🐺 Ersteinrichtung")
+        st.caption("Lege den ersten Administrator an.")
+        n = st.text_input("Benutzername")
+        p1 = st.text_input("Passwort (min. 10 Zeichen)", type="password")
+        p2 = st.text_input("Passwort wiederholen", type="password")
+        if st.form_submit_button("Administrator anlegen", use_container_width=True):
+            if len(n.strip()) < 3 or len(p1) < 10 or p1 != p2:
+                st.error("Benutzername min. 3 Zeichen, Passwort min. 10 Zeichen, beide Passwörter gleich.")
+            else:
+                with edit("Administrator angelegt") as d:
+                    d["users"].append({"username": n.strip(), "pw_hash": hash_pw(p1), "is_admin": True, "permissions": {}})
+                st.rerun()
+    st.stop()
+
+if not ss.user:
+    c = st.columns([1, 1.2, 1])[1]
+    c.markdown("<h2 style='text-align:center'>🐺 WOLF LIFE</h2>"
+               f"<p style='text-align:center;font-weight:bold;color:{t['ACCENT']}'>TEAM MANAGEMENT SUITE</p>",
+               unsafe_allow_html=True)
+    with c.form("login"):
+        n = st.text_input("Benutzername")
+        p = st.text_input("Passwort", type="password")
+        if st.form_submit_button("Anmelden", use_container_width=True):
+            if locked(n):
+                st.error("Zu viele Fehlversuche. Bitte 5 Minuten warten.")
+            else:
+                u = authenticate(n, p)
+                if u:
+                    ss.user = {"username": u["username"], "is_admin": bool(u.get("is_admin")),
+                               "permissions": u.get("permissions") or {}}
+                    st.rerun()
+                register_fail(n)
+                st.error("Falscher Benutzername oder falsches Passwort!")
+    st.stop()
+
+# --- SIDEBAR ---
+user = ss.user
+is_admin = user["is_admin"]
+
+
+def mode_of(key):
+    if is_admin or key == "settings": return "full"
+    if key == "accounts": return "hidden"
+    return user["permissions"].get(key, "hidden")
+
+
+st.sidebar.markdown("### 🐺 WOLF LIFE")
+st.sidebar.markdown(f"<span class='muted'>Eingeloggt als:</span><br><strong>{esc(user['username'])}</strong>",
+                    unsafe_allow_html=True)
+if st.sidebar.button("🔒 Abmelden", use_container_width=True):
+    ss.user = None
+    st.rerun()
 st.sidebar.markdown("---")
+visible = [(k, l) for k, l in TABS if mode_of(k) != "hidden"]
+label = st.sidebar.radio("Navigation", [l for _, l in visible])
+key = next(k for k, l in visible if l == label)
+can_write = mode_of(key) == "full"
+if not can_write: st.sidebar.info("ℹ️ Modus: Nur-Lesen")
 
-available_tabs = []
-tab_keys = []
-tab_modes = []
 
-for key, label in tabs_meta:
-    mode = "full" if st.session_state.is_superadmin else st.session_state.permissions.get(key, "full")
-    if key == "settings": mode = "full"
-    if mode != "hidden":
-        available_tabs.append(label)
-        tab_keys.append(key)
-        tab_modes.append(mode)
+def delete_btn(coll, iid, what):
+    if can_write and st.button("🗑 Löschen", key=f"del_{coll}_{iid}"): remove(coll, iid, f"{what} gelöscht")
 
-selected_tab_label = st.sidebar.radio("Navigation", available_tabs)
-current_index = available_tabs.index(selected_tab_label)
-active_key = tab_keys[current_index]
-active_mode = tab_modes[current_index]
 
-is_readonly = (active_mode == "readonly")
-if is_readonly:
-    st.sidebar.info("ℹ️ Modus: Nur-Lesen")
+member_names = [m["name"] for m in data["members"]]
 
-def check_write():
-    if is_readonly and not st.session_state.is_superadmin:
-        st.warning("Zugriff verweigert: Account hat nur Lese-Rechte in diesem Tab.")
-        return False
-    return True
-
-def get_member_choices():
-    members = data.get("members", [])
-    if not members: return ["Kein Mitglied eingetragen"]
-    return [f"{m['name']} ({m['rank']})" for m in members]
-
-# --- 1. DASHBOARD ---
-if active_key == "dashboard":
+# --- DASHBOARD ---
+if key == "dashboard":
     st.title("📊 Dashboard & Live-Statistiken")
-    st.markdown(f"<span style='color:{t['TEXT_MUTED']};'>Übersicht über den aktuellen Status des Wolf Life Server-Teams.</span>", unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    total_members = len(data["members"])
-    total_applicants = len([a for a in data["applicants"] if a.get("status") not in ["Angenommen", "Abgelehnt"]])
-    active_warnings = len(data["warnings"])
-    open_tasks = len([t for t in data["tasks"] if t.get("status"] != "Erledigt"])
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(f"<div class='metric-card'><div class='metric-title'>Teammitglieder</div><div class='metric-value'>{total_members}</div></div>", unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"<div class='metric-card'><div class='metric-title'>Offene Bewerbungen</div><div class='metric-value'>{total_applicants}</div></div>", unsafe_allow_html=True)
-    with col3:
-        st.markdown(f"<div class='metric-card'><div class='metric-title'>Aktive Verwarnungen</div><div class='metric-value'>{active_warnings}</div></div>", unsafe_allow_html=True)
-    with col4:
-        st.markdown(f"<div class='metric-card'><div class='metric-title'>Offene Aufgaben</div><div class='metric-value'>{open_tasks}</div></div>", unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
+    open_apps = sum(a.get("status") not in ("Angenommen", "Abgelehnt") for a in data["applicants"])
+    open_tasks = sum(x.get("status") != "Erledigt" for x in data["tasks"])
+    stats = [("Teammitglieder", len(data["members"])), ("Offene Bewerbungen", open_apps),
+             ("Verwarnungen", len(data["warnings"])), ("Offene Aufgaben", open_tasks)]
+    for col, (title, val) in zip(st.columns(4), stats):
+        col.markdown(f"<div class='metric-card'><div class='metric-title'>{title}</div>"
+                     f"<div class='metric-value'>{val}</div></div>", unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("🛡️ Rang-Verteilung")
-        st.markdown("<div class='content-box'>", unsafe_allow_html=True)
-        has_ranks = False
-        for r in RANKS:
-            count = len([m for m in data["members"] if m["rank"] == r])
-            if count > 0:
-                has_ranks = True
-                color = RANK_COLORS.get(r, "#FFFFFF")
-                st.markdown(f"- <span style='color:{color}; font-weight:bold;'>● {r}</span>: **{count}**", unsafe_allow_html=True)
-        if not has_ranks:
-            st.markdown(f"<span style='color:{t['TEXT_MUTED']};'>Noch keine Teammitglieder eingetragen.</span>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-        
+        rows = "".join(f"<div><span style='color:{rank_color(r)};font-weight:bold'>● {esc(r)}</span>: <strong>{n}</strong></div>"
+                       for r in RANKS if (n := sum(m["rank"] == r for m in data["members"])))
+        show(rows or "<span class='muted'>Noch keine Teammitglieder eingetragen.</span>")
     with c2:
         st.subheader("📅 Aktuelle Abmeldungen")
-        st.markdown("<div class='content-box'>", unsafe_allow_html=True)
-        if not data["absences"]:
-            st.markdown(f"<span style='color:{t['TEXT_MUTED']};'>Keine aktuellen Abmeldungen vorhanden.</span>", unsafe_allow_html=True)
-        else:
-            for ab in data["absences"][-4:]:
-                st.markdown(f"- **{ab['name']}** ({ab['from_date']} ➔ {ab['to_date']}): *{ab['reason']}*")
-        st.markdown("</div>", unsafe_allow_html=True)
 
-# --- 2. TEAM-ÜBERSICHT ---
-elif active_key == "team":
+        def still_active(a):
+            try: return date.fromisoformat(a["to_date"]) >= date.today()
+            except Exception: return True
+
+        act = [a for a in data["absences"] if still_active(a)][-6:]
+        show("".join(f"<div><strong>{esc(a['name'])}</strong> ({fmt(a['from_date'])} ➔ {fmt(a['to_date'])}): "
+                     f"<em>{esc(a['reason'])}</em></div>" for a in act)
+             or "<span class='muted'>Keine aktuellen Abmeldungen.</span>")
+
+# --- TEAM ---
+elif key == "team":
     st.title("👥 Team-Übersicht & Kader")
-    with st.expander("➕ Neues Teammitglied hinzufügen"):
-        with st.form("add_member_form"):
-            r1, r2, r3, r4 = st.columns(4)
-            m_name = r1.text_input("Discord Name / Tag")
-            m_discord_id = r2.text_input("Discord-ID (Optional)")
-            m_rank = r3.selectbox("Rang", RANKS)
-            m_status = r4.selectbox("Status", ["Aktiv", "Probezeit", "Abgemeldet"])
-            submit_m = st.form_submit_button("Mitglied hinzufügen", use_container_width=True)
-            if submit_m and check_write():
-                if m_name:
-                    data["members"].append({"id": datetime.now().strftime("%Y%m%d%H%M%S%f"), "name": m_name, "discord_id": m_discord_id or "-", "rank": m_rank, "status": m_status, "joined": datetime.now().strftime("%d.%m.%Y")})
-                    save_data(data)
-                    st.rerun()
+    if can_write:
+        with st.expander("➕ Neues Teammitglied hinzufügen"):
+            with st.form("add_member", clear_on_submit=True):
+                a, b, c, e = st.columns(4)
+                n = a.text_input("Discord Name / Tag")
+                did = b.text_input("Discord-ID (optional)")
+                r = c.selectbox("Rang", RANKS)
+                s = e.selectbox("Status", MEMBER_STATUS)
+                if st.form_submit_button("Mitglied hinzufügen", use_container_width=True):
+                    n = n.strip()
+                    if not n: st.warning("Bitte einen Namen eingeben.")
+                    elif n.lower() in [x.lower() for x in member_names]: st.warning("Dieses Mitglied existiert bereits.")
+                    else:
+                        with edit(f"Mitglied {n} hinzugefügt") as d:
+                            d["members"].append({"id": uid(), "name": n, "discord_id": did.strip() or "-", "rank": r,
+                                                 "status": s, "joined": date.today().isoformat()})
+                        st.rerun()
+    q = st.text_input("🔍 Mitglied suchen...").lower()
+    shown = [m for m in data["members"] if q in m["name"].lower()]
+    for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
+        show(f"<div style='display:flex;justify-content:space-between'><div><strong>{esc(m['name'])}</strong><br>"
+             f"<span class='muted'>ID: {esc(m['discord_id'])} | Status: {esc(m['status'])} | Seit: {fmt(m.get('joined'))}</span></div>"
+             f"<div>Rang: <span style='color:{rank_color(m['rank'])};font-weight:bold'>{esc(m['rank'])}</span></div></div>")
+        if can_write:
+            with st.expander(f"✏️ {m['name']} bearbeiten"):
+                a, b = st.columns(2)
+                nr = a.selectbox("Rang", RANKS, index=RANKS.index(m["rank"]) if m["rank"] in RANKS else 0, key=f"r{m['id']}")
+                ns = b.selectbox("Status", MEMBER_STATUS, index=MEMBER_STATUS.index(m["status"]) if m["status"] in MEMBER_STATUS else 0, key=f"s{m['id']}")
+                if st.button("💾 Speichern", key=f"sv{m['id']}"):
+                    update("members", m["id"], f"{m['name']}: {nr}/{ns}", rank=nr, status=ns)
+                delete_btn("members", m["id"], f"Mitglied {m['name']}")
 
-    st.markdown("---")
-    search_query = st.text_input("🔍 Mitglied suchen...")
-    filtered = [m for m in data["members"] if search_query.lower() in m["name"].lower()]
-    for member in sorted(filtered, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
-        rank_col = RANK_COLORS.get(member['rank'], '#FFFFFF')
-        st.markdown(f"""
-        <div class='content-box' style='display: flex; justify-content: space-between; align-items: center;'>
-            <div><strong>{member['name']}</strong><br><span style='color:{t['TEXT_MUTED']}; font-size:12px;'>ID: {member['discord_id']} | Status: {member['status']}</span></div>
-            <div>Rang: <span style='color:{rank_col}; font-weight:bold;'>{member['rank']}</span></div>
-        </div>
-        """, unsafe_allow_html=True)
-
-# --- 3. BEWERBER ---
-elif active_key == "applicants":
+# --- BEWERBER ---
+elif key == "applicants":
     st.title("📋 Bewerber & Testphase")
-    with st.expander("➕ Neue Bewerbung erfassen"):
-        with st.form("add_app_form"):
-            c1, c2, c3 = st.columns(3)
-            app_name = c1.text_input("Discord Name / Tag")
-            app_role = c2.selectbox("Rolle", ["Supporter (Bewerbung)", "Moderator (Bewerbung)", "Administrator (Bewerbung)"])
-            app_status = c3.selectbox("Status", ["Bewerbung eingegangen", "Im Testgespräch", "Testphase läuft", "Angenommen", "Abgelehnt"])
-            app_notes = st.text_area("Notizen")
-            if st.form_submit_button("Speichern", use_container_width=True) and check_write():
-                if app_name:
-                    data["applicants"].append({"id": datetime.now().strftime("%Y%m%d%H%M%S%f"), "name": app_name, "role": app_role, "status": app_status, "notes": app_notes, "date": datetime.now().strftime("%d.%m.%Y")})
-                    save_data(data)
-                    st.rerun()
-    st.markdown("---")
-    for app in reversed(data["applicants"]):
-        st.markdown(f"""
-        <div class='content-box'>
-            <h3>{app['name']} <span style='font-size:14px; color:{t['ACCENT']};'>({app['status']})</span></h3>
-            <p><strong>Rolle:</strong> {app['role']} | <strong>Datum:</strong> {app['date']}</p>
-            {f"<p><em>Notiz: {app['notes']}</em></p>" if app.get('notes') else ""}
-        </div>
-        """, unsafe_allow_html=True)
+    if can_write:
+        with st.expander("➕ Neue Bewerbung erfassen"):
+            with st.form("add_app", clear_on_submit=True):
+                a, b, c = st.columns(3)
+                n = a.text_input("Discord Name / Tag")
+                role = b.selectbox("Rolle", list(APP_ROLES))
+                stat = c.selectbox("Status", APP_STATUS)
+                notes = st.text_area("Notizen")
+                if st.form_submit_button("Speichern", use_container_width=True):
+                    if n.strip():
+                        with edit(f"Bewerbung {n.strip()} erfasst") as d:
+                            d["applicants"].append({"id": uid(), "name": n.strip(), "role": role, "status": stat,
+                                                    "notes": notes, "date": date.today().isoformat()})
+                        st.rerun()
+                    else: st.warning("Bitte einen Namen eingeben.")
+    for ap in reversed(data["applicants"]):
+        note = f"<p><em>Notiz: {esc(ap['notes'])}</em></p>" if ap.get("notes") else ""
+        show(f"<h3>{esc(ap['name'])} <span style='font-size:14px;color:{t['ACCENT']}'>({esc(ap['status'])})</span></h3>"
+             f"<p><strong>Rolle:</strong> {esc(ap['role'])} | <strong>Datum:</strong> {fmt(ap['date'])}</p>{note}")
+        if can_write:
+            with st.expander(f"✏️ {ap['name']} bearbeiten"):
+                ns = st.selectbox("Status", APP_STATUS, index=APP_STATUS.index(ap["status"]) if ap["status"] in APP_STATUS else 0, key=f"as{ap['id']}")
+                if st.button("💾 Status speichern", key=f"asv{ap['id']}"):
+                    update("applicants", ap["id"], f"Bewerbung {ap['name']} → {ns}", status=ns)
+                if ap["status"] == "Angenommen" and ap["name"].lower() not in [x.lower() for x in member_names]:
+                    if st.button("👥 Als Mitglied (Probezeit) übernehmen", key=f"adopt{ap['id']}"):
+                        with edit(f"{ap['name']} ins Team übernommen") as d:
+                            d["members"].append({"id": uid(), "name": ap["name"], "discord_id": "-",
+                                                 "rank": APP_ROLES.get(ap["role"], "Test-Supporter"),
+                                                 "status": "Probezeit", "joined": date.today().isoformat()})
+                        st.rerun()
+                delete_btn("applicants", ap["id"], f"Bewerbung {ap['name']}")
 
-# --- 4. VERWARNUNGEN ---
-elif active_key == "warnings":
+# --- VERWARNUNGEN ---
+elif key == "warnings":
     st.title("⚠️ Verwarnungen & Strikes")
-    with st.expander("➕ Verwarnung eintragen"):
-        with st.form("add_warn_form"):
-            w_member = st.selectbox("Mitglied", get_member_choices())
-            w_level = st.selectbox("Stufe", ["Mündliche Verwarnung", "1. Verwarnung (Strike 1)", "2. Verwarnung (Strike 2)", "Letzte Warnung (Strike 3)"])
-            w_reason = st.text_input("Grund")
-            w_issuer = st.text_input("Von")
-            if st.form_submit_button("Eintragen", use_container_width=True) and check_write():
-                data["warnings"].append({"id": datetime.now().strftime("%Y%m%d%H%M%S%f"), "member": w_member, "level": w_level, "reason": w_reason, "issuer": w_issuer or "Team", "date": datetime.now().strftime("%d.%m.%Y")})
-                save_data(data)
-                st.rerun()
-    st.markdown("---")
+    if can_write:
+        with st.expander("➕ Verwarnung eintragen"):
+            if not member_names: st.info("Zuerst Teammitglieder anlegen.")
+            else:
+                with st.form("add_warn", clear_on_submit=True):
+                    wm = st.selectbox("Mitglied", member_names)
+                    wl = st.selectbox("Stufe", ["Mündliche Verwarnung", "1. Verwarnung (Strike 1)", "2. Verwarnung (Strike 2)", "Letzte Warnung (Strike 3)"])
+                    wr = st.text_input("Grund")
+                    if st.form_submit_button("Eintragen", use_container_width=True):
+                        if wr.strip():
+                            with edit(f"Verwarnung für {wm}") as d:
+                                d["warnings"].append({"id": uid(), "member": wm, "level": wl, "reason": wr.strip(),
+                                                      "issuer": user["username"], "date": date.today().isoformat()})
+                            st.rerun()
+                        else: st.warning("Bitte einen Grund angeben.")
     for w in reversed(data["warnings"]):
-        st.markdown(f"<div class='content-box'><strong>{w['member']}</strong> | <code>{w['level']}</code> (Von: {w['issuer']})<br>Grund: {w['reason']}</div>", unsafe_allow_html=True)
+        show(f"<strong>{esc(w['member'])}</strong> | <code>{esc(w['level'])}</code> (Von: {esc(w['issuer'])}, {fmt(w.get('date'))})"
+             f"<br>Grund: {esc(w['reason'])}")
+        delete_btn("warnings", w["id"], "Verwarnung")
 
-# --- 5. ABMELDUNGEN ---
-elif active_key == "absences":
+# --- ABMELDUNGEN ---
+elif key == "absences":
     st.title("📅 Abmeldungen & Urlaub")
-    with st.expander("➕ Abmeldung erfassen"):
-        with st.form("add_abs_form"):
-            ab_member = st.selectbox("Mitglied", get_member_choices())
-            ab_from = st.text_input("Von (z.B. 14.11.2026)")
-            ab_to = st.text_input("Bis (z.B. 20.11.2026)")
-            ab_reason = st.text_input("Grund")
-            if st.form_submit_button("Speichern", use_container_width=True) and check_write():
-                data["absences"].append({"id": datetime.now().strftime("%Y%m%d%H%M%S%f"), "name": ab_member, "from_date": ab_from, "to_date": ab_to, "reason": ab_reason})
-                save_data(data)
-                st.rerun()
-    st.markdown("---")
-    for ab in reversed(data["absences"]):
-        st.markdown(f"<div class='content-box'><strong>{ab['name']}</strong> ({ab['from_date']} ➔ {ab['to_date']})<br>Grund: {ab['reason']}</div>", unsafe_allow_html=True)
+    if can_write:
+        with st.expander("➕ Abmeldung erfassen"):
+            if not member_names: st.info("Zuerst Teammitglieder anlegen.")
+            else:
+                with st.form("add_abs", clear_on_submit=True):
+                    am = st.selectbox("Mitglied", member_names)
+                    c1, c2 = st.columns(2)
+                    af = c1.date_input("Von", value=date.today(), format="DD.MM.YYYY")
+                    at = c2.date_input("Bis", value=date.today(), format="DD.MM.YYYY")
+                    ar = st.text_input("Grund")
+                    if st.form_submit_button("Speichern", use_container_width=True):
+                        if at < af: st.warning("„Bis“ darf nicht vor „Von“ liegen.")
+                        else:
+                            with edit(f"Abmeldung {am}") as d:
+                                d["absences"].append({"id": uid(), "name": am, "from_date": af.isoformat(),
+                                                      "to_date": at.isoformat(), "reason": ar})
+                            st.rerun()
+    for a in reversed(data["absences"]):
+        show(f"<strong>{esc(a['name'])}</strong> ({fmt(a['from_date'])} ➔ {fmt(a['to_date'])})<br>Grund: {esc(a['reason'])}")
+        delete_btn("absences", a["id"], "Abmeldung")
 
-# --- 6. AUFGABEN ---
-elif active_key == "tasks":
+# --- AUFGABEN ---
+elif key == "tasks":
     st.title("✅ Aufgaben-Board")
-    with st.expander("➕ Neue Aufgabe erstellen"):
-        with st.form("add_task_form"):
-            t_title = st.text_input("Beschreibung")
-            t_prio = st.selectbox("Priorität", ["Hoch", "Mittel", "Niedrig"])
-            selected = [mc for mc in get_member_choices() if st.checkbox(mc, key=f"task_{mc}")]
-            if st.form_submit_button("Erstellen", use_container_width=True) and check_write():
-                data["tasks"].append({"id": datetime.now().strftime("%Y%m%d%H%M%S%f"), "title": t_title, "assignee": ", ".join(selected) or "Team", "priority": t_prio, "status": "Offen"})
-                save_data(data)
-                st.rerun()
-    st.markdown("---")
-    for task in reversed(data["tasks"]):
-        st.markdown(f"<div class='content-box'><strong>{task['title']}</strong> (Prio: {task['priority']})<br>Zuständig: {task['assignee']} | Status: {task['status']}</div>", unsafe_allow_html=True)
+    if can_write:
+        with st.expander("➕ Neue Aufgabe erstellen"):
+            with st.form("add_task", clear_on_submit=True):
+                tt = st.text_input("Beschreibung")
+                tp = st.selectbox("Priorität", PRIOS)
+                who = st.multiselect("Zuständig", member_names)
+                if st.form_submit_button("Erstellen", use_container_width=True):
+                    if tt.strip():
+                        with edit("Aufgabe erstellt") as d:
+                            d["tasks"].append({"id": uid(), "title": tt.strip(), "assignee": ", ".join(who) or "Team",
+                                               "priority": tp, "status": "Offen"})
+                        st.rerun()
+                    else: st.warning("Bitte eine Beschreibung eingeben.")
+    order = lambda x: (x["status"] == "Erledigt", PRIOS.index(x["priority"]) if x["priority"] in PRIOS else 9)
+    for x in sorted(data["tasks"], key=order):
+        done = x["status"] == "Erledigt"
+        title = f"<s>{esc(x['title'])}</s>" if done else esc(x["title"])
+        show(f"<strong>{title}</strong> (Prio: {esc(x['priority'])})<br>Zuständig: {esc(x['assignee'])} | Status: {esc(x['status'])}")
+        if can_write:
+            a, b, _ = st.columns([1, 1, 4])
+            if a.button("↩ Wieder öffnen" if done else "✔ Erledigt", key=f"tg{x['id']}"):
+                update("tasks", x["id"], f"Aufgabe „{x['title']}“", status="Offen" if done else "Erledigt")
+            if b.button("🗑 Löschen", key=f"del_tasks_{x['id']}"): remove("tasks", x["id"], "Aufgabe gelöscht")
 
-# --- 7. PROTOKOLLE ---
-elif active_key == "protocols":
+# --- PROTOKOLLE ---
+elif key == "protocols":
     st.title("📝 Teamsitzungs-Protokolle")
-    with st.expander("➕ Neues Protokoll"):
-        with st.form("add_proto_form"):
-            p_title = st.text_input("Titel")
-            p_part = st.text_input("Teilnehmer")
-            p_cont = st.text_area("Inhalt", value="1. Begrüßung:\n\n2. Themen:\n\n3. Beschlüsse:")
-            if st.form_submit_button("Speichern", use_container_width=True) and check_write():
-                data["protocols"].append({"id": datetime.now().strftime("%Y%m%d%H%M%S%f"), "title": p_title, "date": datetime.now().strftime("%d.%m.%Y %H:%M"), "participants": p_part, "content": p_cont})
-                save_data(data)
-                st.rerun()
-    st.markdown("---")
+    if can_write:
+        with st.expander("➕ Neues Protokoll"):
+            with st.form("add_proto", clear_on_submit=True):
+                pt = st.text_input("Titel")
+                pp = st.text_input("Teilnehmer")
+                pc = st.text_area("Inhalt", value="1. Begrüßung:\n\n2. Themen:\n\n3. Beschlüsse:", height=200)
+                if st.form_submit_button("Speichern", use_container_width=True):
+                    if pt.strip():
+                        with edit(f"Protokoll „{pt.strip()}“") as d:
+                            d["protocols"].append({"id": uid(), "title": pt.strip(), "participants": pp,
+                                                   "date": datetime.now().strftime("%d.%m.%Y %H:%M"), "content": pc})
+                        st.rerun()
+                    else: st.warning("Bitte einen Titel eingeben.")
     for p in reversed(data["protocols"]):
-        st.markdown(f"<div class='content-box'><h3>{p['title']}</h3><p style='color:{t['TEXT_MUTED']}; font-size:12px;'>Erstellt: {p['date']} | Teilnehmer: {p['participants']}</p><pre style='background:transparent; color:{t['TEXT_MAIN']}; border:none;'>{p['content']}</pre></div>", unsafe_allow_html=True)
+        show(f"<h3>{esc(p['title'])}</h3><p class='muted'>Erstellt: {esc(p['date'])} | Teilnehmer: {esc(p['participants'])}</p>"
+             f"<pre style='white-space:pre-wrap;background:transparent;border:none;color:{t['TEXT_MAIN']}'>{esc(p['content'])}</pre>")
+        delete_btn("protocols", p["id"], "Protokoll")
 
-# --- 8. NOTIZEN ---
-elif active_key == "notes":
+# --- NOTIZEN ---
+elif key == "notes":
     st.title("📌 Notizen")
-    notes_val = st.text_area("Notizblock", value=data.get("notes", ""), height=350)
-    if not is_readonly and st.button("💾 Speichern"):
-        data["notes"] = notes_val
-        save_data(data)
+    val = st.text_area("Notizblock", value=data["notes"], height=350, disabled=not can_write)
+    if can_write and st.button("💾 Speichern"):
+        with edit("Notizen aktualisiert") as d: d["notes"] = val
         st.success("Gespeichert!")
 
-# --- 9. EINSTELLUNGEN ---
-elif active_key == "settings":
+# --- EINSTELLUNGEN ---
+elif key == "settings":
     st.title("⚙️ Einstellungen & Design")
-    st.markdown("Wähle hier dein bevorzugtes Farb-Theme:")
-    selected_theme = st.selectbox("Farbschema / Theme", list(THEMES.keys()), index=list(THEMES.keys()).index(current_theme_name))
+    names = list(THEMES)
+    sel = st.selectbox("Dein Farbschema", names, index=names.index(tname) if tname in names else 0)
     if st.button("🎨 Theme anwenden"):
-        if "settings" not in data: data["settings"] = {}
-        data["settings"]["theme"] = selected_theme
-        save_data(data)
+        with edit() as d: d["settings"].setdefault("themes", {})[user["username"]] = sel
         st.rerun()
+    st.markdown("---")
+    st.subheader("🔐 Passwort ändern")
+    with st.form("pw"):
+        old = st.text_input("Aktuelles Passwort", type="password")
+        new = st.text_input("Neues Passwort (min. 10 Zeichen)", type="password")
+        if st.form_submit_button("Passwort ändern"):
+            if authenticate(user["username"], old) and len(new) >= 10:
+                set_password(user["username"], new, "Passwort geändert")
+                st.success("Passwort geändert.")
+            else: st.error("Aktuelles Passwort falsch oder neues Passwort zu kurz.")
 
-# --- 10. BENUTZER & RECHTE ---
-elif active_key == "accounts":
+# --- BENUTZER & RECHTE ---
+elif key == "accounts":
     st.title("🔑 Benutzer & Rechte")
-    if not st.session_state.is_superadmin:
-        st.error("Nur für den Administrator.")
+    if not is_admin:
+        st.error("Nur für Administratoren.")
         st.stop()
-    with st.form("add_user"):
-        u_name = st.text_input("Benutzername")
-        u_pass = st.text_input("Passwort", type="password")
-        u_perms = {k: st.selectbox(f"{l}", ["full", "readonly", "hidden"]) for k, l in tabs_meta if k not in ["accounts", "settings"]}
-        u_perms["accounts"] = "hidden"
-        u_perms["settings"] = "full"
-        if st.form_submit_button("Anlegen", use_container_width=True):
-            if u_name and u_pass:
-                data["users"].append({"username": u_name, "password": u_pass, "permissions": u_perms})
-                save_data(data)
+    with st.expander("➕ Benutzer anlegen"):
+        with st.form("add_user", clear_on_submit=True):
+            un = st.text_input("Benutzername")
+            up = st.text_input("Start-Passwort (min. 10 Zeichen)", type="password")
+            ua = st.checkbox("Administrator (voller Zugriff)")
+            cols = st.columns(3)
+            perms = {k: cols[i % 3].selectbox(l, ["full", "readonly", "hidden"], index=1, key=f"p_{k}")
+                     for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings")}
+            if st.form_submit_button("Anlegen", use_container_width=True):
+                if len(un.strip()) < 3 or len(up) < 10: st.error("Benutzername min. 3, Passwort min. 10 Zeichen.")
+                elif un.strip().lower() in [u["username"].lower() for u in data["users"]]: st.error("Benutzername existiert bereits.")
+                else:
+                    with edit(f"Benutzer {un.strip()} angelegt") as d:
+                        d["users"].append({"username": un.strip(), "pw_hash": hash_pw(up), "is_admin": ua, "permissions": perms})
+                    st.rerun()
+    for u in data["users"]:
+        with st.expander(f"{u['username']} {'(Administrator)' if u.get('is_admin') else ''}"):
+            np_ = st.text_input("Neues Passwort setzen", type="password", key=f"np_{u['username']}")
+            if st.button("🔑 Passwort zurücksetzen", key=f"rp_{u['username']}"):
+                if len(np_) >= 10:
+                    set_password(u["username"], np_, f"Passwort von {u['username']} zurückgesetzt")
+                    st.success("Passwort gesetzt.")
+                else: st.error("Mindestens 10 Zeichen.")
+            if u["username"] != user["username"] and st.button("🗑 Benutzer löschen", key=f"du_{u['username']}"):
+                with edit(f"Benutzer {u['username']} gelöscht") as d:
+                    d["users"] = [x for x in d["users"] if x["username"] != u["username"]]
                 st.rerun()
+    st.subheader("🧾 Aktivitätslog (letzte 30)")
+    show("".join(f"<div class='muted'>{esc(e['ts'].replace('T', ' '))} – <strong>{esc(e['user'])}</strong>: {esc(e['action'])}</div>"
+                 for e in reversed(data["log"][-30:])) or "<span class='muted'>Noch keine Einträge.</span>")
