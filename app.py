@@ -42,6 +42,7 @@ APP_STATUS = ["Bewerbung eingegangen", "Im Testgespräch", "Testphase läuft", "
 APP_ROLES = {"Supporter (Bewerbung)": "Test-Supporter", "Moderator (Bewerbung)": "Test-Moderator",
              "Administrator (Bewerbung)": "Test-Administrator"}
 PRIOS = ["Hoch", "Mittel", "Niedrig"]
+PERM_OPTS = ["full", "readonly", "hidden"]
 TABS = [
     ("dashboard", "📊 Dashboard"), ("team", "👥 Team-Übersicht"), ("applicants", "📋 Bewerber"),
     ("warnings", "⚠️ Verwarnungen"), ("absences", "📅 Abmeldungen"), ("tasks", "✅ Aufgaben"),
@@ -60,6 +61,12 @@ def rank_color(r):
 
 
 def uid(): return uuid.uuid4().hex
+
+
+def badge(r):
+    c = rank_color(r)
+    return (f"<span style='color:{c};border:1px solid {c};border-radius:999px;padding:2px 10px;"
+            f"font-weight:bold;font-size:13px'>{esc(r)}</span>")
 
 
 def fmt(s):
@@ -243,6 +250,12 @@ if not ss.user:
     st.stop()
 
 # --- SIDEBAR ---
+rec = next((x for x in data["users"] if x["username"] == ss.user["username"]), None)
+if not rec:  # Benutzer wurde gelöscht
+    ss.user = None
+    st.rerun()
+ss.user["is_admin"] = bool(rec.get("is_admin"))
+ss.user["permissions"] = rec.get("permissions") or {}
 user = ss.user
 is_admin = user["is_admin"]
 
@@ -286,7 +299,7 @@ if key == "dashboard":
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("🛡️ Rang-Verteilung")
-        rows = "".join(f"<div><span style='color:{rank_color(r)};font-weight:bold'>● {esc(r)}</span>: <strong>{n}</strong></div>"
+        rows = "".join(f"<div style='margin-bottom:6px'>{badge(r)} <strong>× {n}</strong></div>"
                        for r in RANKS if (n := sum(m["rank"] == r for m in data["members"])))
         show(rows or "<span class='muted'>Noch keine Teammitglieder eingetragen.</span>")
     with c2:
@@ -321,12 +334,18 @@ elif key == "team":
                             d["members"].append({"id": uid(), "name": n, "discord_id": did.strip() or "-", "rank": r,
                                                  "status": s, "joined": date.today().isoformat()})
                         st.rerun()
-    q = st.text_input("🔍 Mitglied suchen...").lower()
-    shown = [m for m in data["members"] if q in m["name"].lower()]
+    def warn_txt(n):
+        c = sum(w["member"] == n or w["member"].startswith(n + " (") for w in data["warnings"])
+        return f" | ⚠️ {c} Verwarnung(en)" if c else ""
+
+    f1, f2 = st.columns([3, 1])
+    q = f1.text_input("🔍 Mitglied suchen...").lower()
+    sf = f2.selectbox("Status", ["Alle"] + MEMBER_STATUS)
+    shown = [m for m in data["members"] if q in m["name"].lower() and sf in ("Alle", m["status"])]
     for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
         show(f"<div style='display:flex;justify-content:space-between'><div><strong>{esc(m['name'])}</strong><br>"
-             f"<span class='muted'>ID: {esc(m['discord_id'])} | Status: {esc(m['status'])} | Seit: {fmt(m.get('joined'))}</span></div>"
-             f"<div>Rang: <span style='color:{rank_color(m['rank'])};font-weight:bold'>{esc(m['rank'])}</span></div></div>")
+             f"<span class='muted'>ID: {esc(m['discord_id'])} | Status: {esc(m['status'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
+             f"<div>{badge(m['rank'])}</div></div>")
         if can_write:
             with st.expander(f"✏️ {m['name']} bearbeiten"):
                 a, b = st.columns(2)
@@ -517,6 +536,22 @@ elif key == "accounts":
                     st.rerun()
     for u in data["users"]:
         with st.expander(f"{u['username']} {'(Administrator)' if u.get('is_admin') else ''}"):
+            is_self = u["username"] == user["username"]
+            adm = st.checkbox("Administrator (voller Zugriff)", value=bool(u.get("is_admin")),
+                              disabled=is_self, key=f"adm_{u['username']}")
+            cur = u.get("permissions") or {}
+            pc = st.columns(3)
+            newp = {k: pc[i % 3].selectbox(l, PERM_OPTS, index=PERM_OPTS.index(cur.get(k, "hidden")) if cur.get(k, "hidden") in PERM_OPTS else 2,
+                                           key=f"ep_{u['username']}_{k}")
+                    for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings")}
+            if st.button("💾 Rechte speichern", key=f"sp_{u['username']}"):
+                with edit(f"Rechte von {u['username']} geändert") as d:
+                    for x in d["users"]:
+                        if x["username"] == u["username"]:
+                            x["permissions"] = newp
+                            x["is_admin"] = adm
+                st.success("Rechte gespeichert.")
+            st.markdown("---")
             np_ = st.text_input("Neues Passwort setzen", type="password", key=f"np_{u['username']}")
             if st.button("🔑 Passwort zurücksetzen", key=f"rp_{u['username']}"):
                 if len(np_) >= 10:
@@ -527,6 +562,9 @@ elif key == "accounts":
                 with edit(f"Benutzer {u['username']} gelöscht") as d:
                     d["users"] = [x for x in d["users"] if x["username"] != u["username"]]
                 st.rerun()
+    bk = {k: v for k, v in data.items() if k != "users"}
+    st.download_button("💾 Backup herunterladen (ohne Benutzerkonten)", json.dumps(bk, indent=2, ensure_ascii=False),
+                       file_name=f"wolflife_backup_{date.today()}.json", mime="application/json")
     st.subheader("🧾 Aktivitätslog (letzte 30)")
     show("".join(f"<div class='muted'>{esc(e['ts'].replace('T', ' '))} – <strong>{esc(e['user'])}</strong>: {esc(e['action'])}</div>"
                  for e in reversed(data["log"][-30:])) or "<span class='muted'>Noch keine Einträge.</span>")
