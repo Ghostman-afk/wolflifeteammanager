@@ -258,6 +258,21 @@ input:focus,textarea:focus{box-shadow:0 0 0 1px @ACCENT!important}
 li[role=option]:hover{background:@ACCENT!important}
 .stButton>button,[data-testid=stFormSubmitButton] button,[data-testid=stDownloadButton] button,button[kind=secondaryFormSubmit]{background:linear-gradient(180deg,@ACCENT,@ACCENT_HOVER)!important;color:#fff!important;border:none!important;border-radius:4px 12px 4px 12px!important;font-weight:700!important;letter-spacing:.3px;box-shadow:0 2px 10px rgba(@ACCENT_RGB,.35);transition:all .15s}
 .stButton>button:hover,[data-testid=stFormSubmitButton] button:hover,[data-testid=stDownloadButton] button:hover{filter:brightness(1.12);transform:translateY(-1px);box-shadow:0 4px 18px rgba(@ACCENT_RGB,.55)}
+
+/* --- FIX FÜR POPOVER-BUTTONS (GRAUER HINTERGRUND) --- */
+[data-testid=stPopover] button {
+    background: @BG_CARD !important;
+    color: @TEXT_MAIN !important;
+    border: 1px solid rgba(255,255,255,.1) !important;
+    border-radius: 6px 14px 6px 14px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,.3) !important;
+}
+[data-testid=stPopover] button:hover {
+    background: @BG_INPUT !important;
+    border-color: @ACCENT !important;
+    color: @TEXT_MAIN !important;
+}
+
 .nav-group{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.2em;color:@TEXT_MUTED!important;margin:20px 0 6px 6px;text-transform:uppercase}
 .nav-group::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(@ACCENT_RGB,.55),transparent)}
 .user-card{display:flex;align-items:center;gap:12px;padding:12px;margin:6px 0 4px;border-radius:6px 16px 6px 16px;background:linear-gradient(135deg,rgba(255,255,255,.06),rgba(255,255,255,0)),@BG_CARD;border:1px solid rgba(@ACCENT_RGB,.30)}
@@ -273,30 +288,6 @@ li[role=option]:hover{background:@ACCENT!important}
 [data-testid=stSidebar] .st-key-logout button>div{justify-content:center!important}
 [data-testid=stSidebar] .st-key-logout button p{text-align:center!important}
 [data-testid=stSidebar] .st-key-logout button:hover{background:rgba(239,68,68,.25)!important;border-color:#EF4444!important;transform:none}
-
-/* --- TEAM-ÜBERSICHT: KOMPAKT & KLICKBAR --- */
-.member-card-wrapper { margin-bottom: 6px; }
-.member-card-wrapper [data-testid=stPopover] { width: 100%; }
-.member-card-wrapper [data-testid=stPopover] > button {
-    width: 100% !important;
-    text-align: left !important;
-    background: linear-gradient(225deg,rgba(@ACCENT_RGB,.6) 50%,transparent 50%) top right/26px 26px no-repeat,linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,0) 45%),@BG_CARD !important;
-    border: 1px solid rgba(255,255,255,.08) !important;
-    border-left: 4px solid @ACCENT !important;
-    border-radius: 6px 18px 6px 18px !important;
-    padding: 12px 18px !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,.3) !important;
-    transition: transform .15s, box-shadow .15s !important;
-    color: @TEXT_MAIN !important;
-    min-height: auto !important;
-}
-.member-card-wrapper [data-testid=stPopover] > button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 18px rgba(0,0,0,.4), 0 0 18px rgba(@ACCENT_RGB,.18) !important;
-    border-color: rgba(@ACCENT_RGB,.4) !important;
-}
-.member-card-wrapper [data-testid=stPopover] > button div { width: 100%; }
-
 [data-testid=stPopoverBody]{min-width:360px;background:@BG_CARD!important;color:@TEXT_MAIN!important;border:1px solid rgba(@ACCENT_RGB,.35)!important;border-radius:6px 18px 6px 18px!important}
 div[data-baseweb=select] div{background:@BG_INPUT!important;color:@TEXT_MAIN!important}
 div[data-baseweb=select] svg{fill:@TEXT_MAIN!important}
@@ -479,14 +470,12 @@ elif key == "team":
     shown = [m for m in data["members"] if q in m["name"].lower() and sf in ("Alle", m["status"])]
 
     for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
-        # Inhalt der Karte mit den echten Farben und Badges
         card_content = (f"<div style='display:flex;justify-content:space-between;align-items:center;width:100%'>"
                         f"<div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
                         f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
                         f"<div style='display:flex;align-items:center;gap:12px;'>{badge(m['rank'])}</div></div>")
         
         if can_write:
-            # Wir betten die Karte optisch ein und platzieren das Bearbeiten-Popover elegant daneben/integriert
             col_card, col_btn = st.columns([11, 1])
             with col_card:
                 show(card_content, "member-card")
