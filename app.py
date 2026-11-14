@@ -274,11 +274,13 @@ li[role=option]:hover{background:@ACCENT!important}
 [data-testid=stSidebar] .st-key-logout button p{text-align:center!important}
 [data-testid=stSidebar] .st-key-logout button:hover{background:rgba(239,68,68,.25)!important;border-color:#EF4444!important;transform:none}
 .member-card{min-height:104px}
-[class*="st-key-edit_"]{align-items:flex-end;margin-top:-72px;margin-bottom:22px;padding-right:16px;position:relative;z-index:3}
-[class*="st-key-edit_"] button{width:34px;height:34px;min-height:34px!important;padding:0!important;border-radius:50%!important;background:rgba(255,255,255,.07)!important;border:1px solid rgba(@ACCENT_RGB,.55)!important;box-shadow:none!important;transition:all .15s}
+[class*="st-key-edit_"]{align-items:flex-end;margin-top:-112px;margin-bottom:66px;padding-right:130px;position:relative;z-index:3}
+[class*="st-key-edit_"] button{width:30px;height:30px;min-height:30px!important;padding:0!important;border-radius:50%!important;background:rgba(255,255,255,.07)!important;border:1px solid rgba(@ACCENT_RGB,.55)!important;box-shadow:none!important;transition:all .15s}
 [class*="st-key-edit_"] button:hover{background:rgba(@ACCENT_RGB,.30)!important;transform:scale(1.1)}
 [class*="st-key-edit_"] button svg{display:none}
-[data-testid=stPopoverBody]{min-width:360px}
+[data-testid=stPopoverBody]{min-width:360px;background:@BG_CARD!important;color:@TEXT_MAIN!important;border:1px solid rgba(@ACCENT_RGB,.35)!important;border-radius:6px 18px 6px 18px!important}
+div[data-baseweb=select] div{background:@BG_INPUT!important;color:@TEXT_MAIN!important}
+div[data-baseweb=select] svg{fill:@TEXT_MAIN!important}
 ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:@BG_INPUT;border-radius:4px}
 """
 for k in sorted(t, key=len, reverse=True): CSS = CSS.replace("@" + k, t[k])
@@ -456,6 +458,10 @@ elif key == "team":
     q = f1.text_input("🔍 Mitglied suchen...").lower()
     sf = f2.selectbox("Status", ["Alle"] + MEMBER_STATUS)
     shown = [m for m in data["members"] if q in m["name"].lower() and sf in ("Alle", m["status"])]
+    if can_write and shown:  # Stift sitzt links vom Rang-Badge: Abstand je nach Badge-Breite
+        est = lambda r: int(len(r) * 7.4 + (22 if r == "Owner" else 0) + 26)
+        st.markdown("<style>" + "".join(f".st-key-edit_{m['id']}{{padding-right:{20 + est(m['rank']) + 10}px!important}}"
+                                        for m in shown) + "</style>", unsafe_allow_html=True)
     for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
         show(f"<div style='display:flex;justify-content:space-between'><div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
              f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
