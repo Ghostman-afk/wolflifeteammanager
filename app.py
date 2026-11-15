@@ -1,8 +1,9 @@
 import streamlit as st
 import json, os, uuid, time, hmac, hashlib, secrets, threading, shutil, base64, random
 from urllib.parse import quote
+import re, urllib.request, urllib.error
 from contextlib import contextmanager
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from html import escape as esc
 
 LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logo.jpg")
@@ -77,7 +78,7 @@ TABS = [
     ("applicants", "📋 Bewerber"), ("wishes", "💡 Teamwünsche"),
     ("warnings", "⚠️ Verwarnungen"), ("absences", "📅 Abmeldungen"), ("tasks", "✅ Aufgaben"),
     ("protocols", "📝 Protokolle"), ("notes", "📌 Notizen"), ("settings", "⚙️ Einstellungen"),
-    ("accounts", "🔑 Benutzer & Rechte"),
+    ("accounts", "🔑 Benutzer & Rechte"), ("discord", "🔔 Discord"),
 ]
 
 
@@ -133,6 +134,97 @@ def badge(r):
 def fmt(s):
     try: return date.fromisoformat(s).strftime("%d.%m.%Y")
     except Exception: return s or "-"
+
+
+# --- DISCORD (Webhooks + Bot für Rollen) ---
+DC_CFG_FILE = "discord_config.json"  # getrennt von den Teamdaten, damit Token nicht im Backup landen
+DISCORD_API = "https://discord.com/api/v10"
+DC_HOOKS = {"team": "👥 Team-Updates", "protocols": "📝 Protokolle", "warnings": "⚠️ Verwarnungen", "absences": "📅 Abmeldungen"}
+DC_HOOK_RE = re.compile(r"^https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/(?:v\d+/)?webhooks/\d+/[\w-]+$")
+DC_ERR = {0: "Keine Verbindung zu Discord.", 401: "Bot-Token ungültig.",
+          403: "Bot darf die Rolle nicht vergeben (Recht „Rollen verwalten“ fehlt oder Bot-Rolle steht nicht über der Zielrolle).",
+          404: "Mitglied nicht auf dem Server oder Server-/Rollen-ID falsch."}
+
+
+@st.cache_resource
+def _dc_log(): return []
+
+
+def dc_cfg():
+    cfg = {"webhooks": {}, "bot_token": "", "guild_id": "", "roles": {}, "sync_roles": False}
+    try:
+        with open(DC_CFG_FILE, encoding="utf-8") as f: cfg.update(json.load(f))
+    except Exception: pass
+    return cfg
+
+
+def dc_save(cfg):
+    tmp = DC_CFG_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f: json.dump(cfg, f, indent=2, ensure_ascii=False)
+    try: os.chmod(tmp, 0o600)
+    except Exception: pass
+    os.replace(tmp, DC_CFG_FILE)
+
+
+def _dc_request(method, url, payload=None, token=None):
+    h = {"Content-Type": "application/json", "User-Agent": "DiscordBot (https://wolflife.local, 1.0)"}
+    if token: h["Authorization"] = f"Bot {token}"
+    data = json.dumps(payload).encode() if payload is not None else b""
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=h, method=method), timeout=8) as r:
+            return r.status, ""
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "ignore")[:150]
+    except Exception as e:
+        return 0, str(e)[:150]
+
+
+def dc_embed(title, color, fields=(), desc=""):
+    e = {"title": title[:250], "color": color, "timestamp": datetime.now(timezone.utc).isoformat(),
+         "footer": {"text": "Wolf Life Team Suite"}}
+    if desc: e["description"] = desc[:3500] + ("…" if len(desc) > 3500 else "")
+    if fields: e["fields"] = [{"name": n[:250], "value": (str(v) or "-")[:1000], "inline": len(str(v)) < 40} for n, v in fields]
+    return e
+
+
+def dc_post(hook, embed, cfg, log):
+    url = cfg["webhooks"].get(hook, "")
+    if not url: return None
+    code, err = _dc_request("POST", url, {"embeds": [embed], "allowed_mentions": {"parse": []}})
+    ok = code in (200, 204)
+    log.append((datetime.now().strftime("%d.%m. %H:%M:%S"), DC_HOOKS[hook], "✅ gesendet" if ok else f"❌ {code} {err}"))
+    del log[:-30]
+    return ok, code, err
+
+
+def dc_send(hook, title, color, fields=(), desc=""):
+    """Nachricht im Hintergrund senden, damit die Seite nicht wartet."""
+    cfg, log = dc_cfg(), _dc_log()
+    if cfg["webhooks"].get(hook):
+        threading.Thread(target=dc_post, args=(hook, dc_embed(title, color, fields, desc), cfg, log), daemon=True).start()
+
+
+def dc_mention(m):
+    d = str(m.get("discord_id", "-"))
+    return f"<@{d}> ({m['name']})" if d.isdigit() else m["name"]
+
+
+def dc_sync_role(discord_id, old, new):
+    cfg = dc_cfg()
+    tok = os.environ.get("DISCORD_BOT_TOKEN") or cfg["bot_token"]
+    if not (cfg["sync_roles"] and tok and cfg["guild_id"]): return None
+    if not str(discord_id).isdigit():
+        return "⚠️ Rang geändert, aber Discord-Rolle nicht angepasst: Beim Mitglied fehlt eine gültige Discord-ID (Zahl)."
+    new_r, old_r = cfg["roles"].get(new, ""), cfg["roles"].get(old, "")
+    if not new_r: return f"⚠️ Rang geändert, aber für „{new}“ ist keine Discord-Rolle zugeordnet."
+    base, log, errs = f"{DISCORD_API}/guilds/{cfg['guild_id']}/members/{discord_id}/roles", _dc_log(), []
+    for method, rid in ([("DELETE", old_r)] if old_r and old_r != new_r else []) + [("PUT", new_r)]:
+        code, err = _dc_request(method, f"{base}/{rid}", token=tok)
+        ok = code in (200, 204)
+        log.append((datetime.now().strftime("%d.%m. %H:%M:%S"), "Rollen-Sync", "✅ ok" if ok else f"❌ {code} {err}"))
+        if not ok: errs.append(DC_ERR.get(code, f"Fehler {code}."))
+    del log[:-30]
+    return "✅ Discord-Rolle angepasst." if not errs else "⚠️ Discord-Rolle nicht (vollständig) angepasst: " + " ".join(dict.fromkeys(errs))
 
 
 # --- DATEN (atomar speichern, gesperrt, mit Backup) ---
@@ -415,7 +507,7 @@ is_admin = user["is_admin"]
 
 def mode_of(key):
     if is_admin or key == "settings": return "full"
-    if key == "accounts": return "hidden"
+    if key in ("accounts", "discord"): return "hidden"
     return user["permissions"].get(key, DEF_PERM.get(key, "hidden"))
 
 
@@ -432,7 +524,7 @@ counts = {"applicants": sum(x.get("status") not in ("Angenommen", "Abgelehnt") f
           "wishes": sum(w.get("status") == "Neu" for w in data["wishes"])}
 NAV_GROUPS = [("Übersicht", ["dashboard"]), ("Team", ["team", "archive", "applicants", "wishes"]),
               ("Verwaltung", ["warnings", "absences", "tasks", "protocols", "notes"]),
-              ("System", ["settings", "accounts"])]
+              ("System", ["settings", "accounts", "discord"])]
 for grp, grp_keys in NAV_GROUPS:
     items = [(k, l) for k, l in visible if k in grp_keys]
     if not items: continue
@@ -463,6 +555,22 @@ rank_of = {m["name"]: m["rank"] for m in data["members"]}
 
 
 def mlabel(n): return f"{n} ({rank_of[n]})" if n in rank_of else n
+
+
+def flash(msg, kind="info"): ss.setdefault("flash", []).append((kind, msg))
+
+
+def rank_change(m, new, did):
+    old = m["rank"]
+    up = RANKS.index(new) < RANKS.index(old) if old in RANKS and new in RANKS else None
+    title = "⬆️ Uprank" if up else "⬇️ Downrank" if up is False else "🔄 Rangänderung"
+    color = 0x22C55E if up else 0xEF4444 if up is False else 0x3B82F6
+    dc_send("team", f"{title}: {m['name']}", color, [("Mitglied", dc_mention({**m, "discord_id": did or "-"})),
+            ("Alter Rang", old), ("Neuer Rang", new), ("Durchgeführt von", user["username"])])
+    res = dc_sync_role(did, old, new)
+    if res: flash(res, "success" if res.startswith("✅") else "warning")
+
+for _k, _msg in ss.pop("flash", []): getattr(st, _k)(_msg)
 
 # --- DASHBOARD ---
 if key == "dashboard":
@@ -515,7 +623,7 @@ elif key == "team":
             with st.form("add_member", clear_on_submit=True):
                 a, b, c, e = st.columns(4)
                 n = a.text_input("Discord Name / Tag")
-                did = b.text_input("Discord-ID (optional)")
+                did = b.text_input("Discord-ID (Zahl, für Rollen-Sync)")
                 r = c.selectbox("Rang", RANKS)
                 s = e.selectbox("Status", MEMBER_STATUS)
                 if st.form_submit_button("Mitglied hinzufügen", use_container_width=True):
@@ -553,8 +661,10 @@ elif key == "team":
                     a, b = st.columns(2)
                     nr = a.selectbox("Rang", RANKS, index=RANKS.index(m["rank"]) if m["rank"] in RANKS else 0, key=f"r{m['id']}")
                     ns = b.selectbox("Status", MEMBER_STATUS, index=MEMBER_STATUS.index(m["status"]) if m["status"] in MEMBER_STATUS else 0, key=f"s{m['id']}")
+                    nid = st.text_input("Discord-ID (Zahl, für Rollen-Sync)", value="" if m.get("discord_id", "-") == "-" else m["discord_id"], key=f"did{m['id']}")
                     if st.button("💾 Speichern", key=f"sv{m['id']}"):
-                        update("members", m["id"], f"{m['name']}: {nr}/{ns}", rank=nr, status=ns)
+                        if nr != m["rank"]: rank_change(m, nr, nid.strip())
+                        update("members", m["id"], f"{m['name']}: {nr}/{ns}", rank=nr, status=ns, discord_id=nid.strip() or "-")
                     st.markdown("---")
                     st.markdown("**Aus dem Team entfernen**")
                     why = st.text_input("Grund (Pflicht)", key=f"why{m['id']}")
@@ -641,6 +751,9 @@ elif key == "warnings":
                             with edit(f"Verwarnung für {wm}") as d:
                                 d["warnings"].append({"id": uid(), "member": wm, "level": wl, "reason": wr.strip(),
                                                       "issuer": user["username"], "date": date.today().isoformat()})
+                            dc_send("warnings", f"⚠️ Verwarnung: {wm}", 0xEF4444,
+                                    [("Mitglied", dc_mention(next((x for x in data["members"] if x["name"] == wm), {"name": wm}))),
+                                     ("Stufe", wl), ("Grund", wr.strip()), ("Ausgestellt von", user["username"])])
                             st.rerun()
                         else: st.warning("Bitte einen Grund angeben.")
     for w in reversed(data["warnings"]):
@@ -673,6 +786,9 @@ elif key == "absences":
                             with edit(f"Abmeldung {am}") as d:
                                 d["absences"].append({"id": uid(), "name": am, "from_date": af.isoformat(),
                                                       "to_date": at.isoformat(), "reason": ar})
+                            dc_send("absences", f"📅 Abmeldung: {am}", 0xF59E0B,
+                                    [("Mitglied", dc_mention(next((x for x in data["members"] if x["name"] == am), {"name": am}))),
+                                     ("Von", fmt(af.isoformat())), ("Bis", fmt(at.isoformat())), ("Grund", ar or "-")])
                             st.rerun()
                             
     for a in reversed(data["absences"]):
@@ -724,6 +840,8 @@ elif key == "protocols":
                         with edit(f"Protokoll „{pt.strip()}“") as d:
                             d["protocols"].append({"id": uid(), "title": pt.strip(), "participants": pp,
                                                    "date": datetime.now().strftime("%d.%m.%Y %H:%M"), "content": pc})
+                        dc_send("protocols", f"📝 Neues Protokoll: {pt.strip()}", 0x3B82F6,
+                                [("Teilnehmer", pp or "-"), ("Erstellt von", user["username"])], pc)
                         st.rerun()
                     else: st.warning("Bitte einen Titel eingeben.")
     for p in reversed(data["protocols"]):
@@ -782,6 +900,59 @@ elif key == "wishes":
                         update("wishes", w["id"], f"Wunsch „{w['title']}“ → {ns}", status=ns, answer=na.strip())
                 if st.button("🗑 Wunsch löschen", key=f"wdel{w['id']}"): remove("wishes", w["id"], f"Wunsch „{w['title']}“")
 
+# --- DISCORD ---
+elif key == "discord":
+    st.title("🔔 Discord-Anbindung")
+    if not is_admin:
+        st.error("Nur für Administratoren.")
+        st.stop()
+    cfg = dc_cfg()
+    st.caption("Webhooks schicken Nachrichten in je einen Channel. Für das automatische Ändern von Discord-Rollen wird zusätzlich ein Bot benötigt.")
+    with st.expander("📖 Einrichtung"):
+        st.markdown("""
+**Webhook:** Channel → Einstellungen → Integrationen → Webhooks → Neuer Webhook → URL kopieren (pro Bereich ein Channel möglich).
+
+**Bot (nur für Rollen):** [Developer Portal](https://discord.com/developers/applications) → Neue Application → *Bot* → Token kopieren.
+Bot mit dem Recht **Rollen verwalten** auf den Server einladen. Seine Rolle muss in der Rollenliste **über** allen Rängen stehen, die er vergeben soll.
+
+**IDs:** In Discord unter Einstellungen → Erweitert den *Entwicklermodus* aktivieren. Dann Rechtsklick auf Server, Rolle oder Person → *ID kopieren*.
+
+Tipp: Den Token kannst du statt hier auch als Umgebungsvariable `DISCORD_BOT_TOKEN` setzen.
+""")
+    with st.form("dc_cfg"):
+        st.subheader("Webhooks")
+        hooks = {k: st.text_input(lbl, value=cfg["webhooks"].get(k, ""), placeholder="https://discord.com/api/webhooks/…") for k, lbl in DC_HOOKS.items()}
+        st.subheader("Bot & Rollen-Sync")
+        sync = st.checkbox("Discord-Rolle bei Rangänderung automatisch anpassen", value=bool(cfg["sync_roles"]))
+        c1, c2 = st.columns(2)
+        gid = c1.text_input("Server-ID", value=cfg["guild_id"])
+        tok = c2.text_input("Bot-Token" + (" (gespeichert, leer lassen = behalten)" if cfg["bot_token"] else ""), type="password")
+        st.subheader("Rang → Discord-Rollen-ID")
+        rc = st.columns(3)
+        roles = {r: rc[i % 3].text_input(r, value=cfg["roles"].get(r, ""), key=f"dcr_{i}") for i, r in enumerate(RANKS)}
+        if st.form_submit_button("💾 Speichern", use_container_width=True):
+            hooks = {k: v.strip() for k, v in hooks.items()}
+            roles = {k: v.strip() for k, v in roles.items()}
+            if any(v and not DC_HOOK_RE.match(v) for v in hooks.values()):
+                st.error("Ungültige Webhook-URL. Sie muss eine discord.com-Webhook-Adresse sein.")
+            elif any(v and not v.isdigit() for v in [gid.strip(), *roles.values()]):
+                st.error("Server- und Rollen-IDs bestehen nur aus Ziffern.")
+            else:
+                cfg.update(webhooks=hooks, sync_roles=sync, guild_id=gid.strip(), roles=roles)
+                if tok.strip(): cfg["bot_token"] = tok.strip()
+                dc_save(cfg)
+                st.success("Gespeichert.")
+    st.subheader("🧪 Testnachricht senden")
+    for col, (k, lbl) in zip(st.columns(4), DC_HOOKS.items()):
+        if col.button(lbl, key=f"dct_{k}", use_container_width=True):
+            r = dc_post(k, dc_embed("🧪 Testnachricht", 0x3B82F6, [("Von", user["username"])]), cfg, _dc_log())
+            if r is None: st.warning(f"Für „{lbl}“ ist noch keine Webhook-URL gespeichert.")
+            elif r[0]: st.success(f"„{lbl}“: Nachricht gesendet.")
+            else: st.error(f"„{lbl}“: {DC_ERR.get(r[1], 'Fehler')} ({r[1]})")
+    st.subheader("📜 Letzte Sendungen")
+    show("".join(f"<div class='muted'>{esc(t)} – <strong>{esc(w)}</strong>: {esc(r)}</div>" for t, w, r in reversed(_dc_log()[-15:]))
+         or "<span class='muted'>Noch nichts gesendet.</span>")
+
 # --- NOTIZEN ---
 elif key == "notes":
     st.title("📌 Notizen")
@@ -822,7 +993,7 @@ elif key == "accounts":
             ua = st.checkbox("Administrator (voller Zugriff)")
             cols = st.columns(3)
             perms = {k: cols[i % 3].selectbox(l, PERM_OPTS, format_func=lambda x: PERM_LABELS[x], index=1, key=f"p_{k}")
-                     for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings")}
+                     for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings", "discord")}
             if st.form_submit_button("Anlegen", use_container_width=True):
                 if len(un.strip()) < 3 or len(up) < 3: st.error("Benutzername min. 3, Passwort min. 3 Zeichen.")
                 elif un.strip().lower() in [u["username"].lower() for u in data["users"]]: st.error("Benutzername existiert bereits.")
@@ -858,7 +1029,7 @@ elif key == "accounts":
             newp = {k: pc[i % 3].selectbox(l, PERM_OPTS, format_func=lambda x: PERM_LABELS[x],
                                            index=PERM_OPTS.index(cur.get(k, DEF_PERM.get(k, "hidden"))) if cur.get(k, DEF_PERM.get(k, "hidden")) in PERM_OPTS else 2,
                                            key=f"ep_{u['username']}_{k}")
-                    for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings")}
+                    for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings", "discord")}
             if st.button("💾 Rechte speichern", key=f"sp_{u['username']}"):
                 with edit(f"Rechte von {u['username']} geändert") as d:
                     for x in d["users"]:
