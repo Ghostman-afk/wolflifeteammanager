@@ -53,7 +53,7 @@ THEME_BG_MAP = {
 }
 
 RANKS = [
-    "Owner", "Projektleitung", "stellvertretende Projektleitung",
+    "Owner", "Projektleitung", "Developer", "stellvertretende Projektleitung",
     "Teamleitung", "stellvertretende Teamleitung",
     "Administrator", "Test-Administrator",
     "Moderator 3", "Moderator 2", "Moderator 1", "Test-Moderator",
@@ -66,6 +66,7 @@ APP_ROLES = {"Supporter (Bewerbung)": "Test-Supporter", "Moderator (Bewerbung)":
 PRIOS = ["Hoch", "Mittel", "Niedrig"]
 PERM_OPTS = ["full", "readonly", "absence_own", "hidden"]
 PERM_LABELS = {"full": "Vollzugriff", "readonly": "Nur-Lesen", "absence_own": "Eigene Abmeldung", "hidden": "Versteckt"}
+TASK_APPROVER_RANKS = ["Owner", "Projektleitung", "Developer"]  # dürfen Aufgabenvorschläge übernehmen
 DEF_PERM = {"wishes": "readonly"}  # Teamwünsche sind standardmäßig für alle sichtbar
 WISH_STATUS = ["Neu", "In Prüfung", "Geplant", "Umgesetzt", "Abgelehnt"]
 WISH_OPEN = ("Neu", "In Prüfung", "Geplant")
@@ -84,6 +85,7 @@ TABS = [
 
 def rank_color(r):
     if r == "Owner": return "#A855F7"
+    if r == "Developer": return "#FFFFFF"
     if "Projektleitung" in r: return "#FF69B4"
     if "Teamleitung" in r: return "#FF7B00"
     if "Administrator" in r: return "#FF2A2A"
@@ -233,7 +235,7 @@ def _lock(): return threading.Lock()
 
 
 DEFAULTS = {"members": [], "applicants": [], "warnings": [], "absences": [], "tasks": [],
-            "protocols": [], "notes": "", "users": [], "log": [], "settings": {}, "archive": [], "wishes": []}
+            "protocols": [], "notes": "", "users": [], "log": [], "settings": {}, "archive": [], "wishes": [], "task_ideas": []}
 
 
 def load_data():
@@ -474,6 +476,13 @@ if not any(u.get("is_admin") for u in data["users"]):
                 st.rerun()
     st.stop()
 
+if not any(u.get("is_owner") for u in data["users"]):
+    _first = next(u for u in data["users"] if u.get("is_admin"))
+    with edit("Alpha-Owner festgelegt") as d:
+        for x in d["users"]:
+            if x["username"] == _first["username"]: x["is_owner"] = True
+    st.rerun()
+
 if not ss.user:
     c = st.columns([1, 1.2, 1])[1]
     c.markdown(f"<div style='text-align:center'>{logo_html(340) or '<h2>🐺 WOLF LIFE</h2>'}"
@@ -501,13 +510,16 @@ if not rec:  # Benutzer wurde gelöscht
     st.rerun()
 ss.user["is_admin"] = bool(rec.get("is_admin"))
 ss.user["permissions"] = rec.get("permissions") or {}
+ss.user["is_owner"] = bool(rec.get("is_owner"))
 user = ss.user
 is_admin = user["is_admin"]
+is_owner = user["is_owner"]
 
 
 def mode_of(key):
+    if key == "discord": return "full" if is_owner else "hidden"  # nur Alpha-Owner
     if is_admin or key == "settings": return "full"
-    if key in ("accounts", "discord"): return "hidden"
+    if key == "accounts": return "hidden"
     return user["permissions"].get(key, DEF_PERM.get(key, "hidden"))
 
 
@@ -517,7 +529,7 @@ visible = [(k, l) for k, l in TABS if mode_of(k) != "hidden"]
 if ss.get("page") not in [k for k, _ in visible]: ss.page = visible[0][0]
 st.sidebar.markdown(f"<div class='user-card'><div class='avatar'>{esc(user['username'][:1].upper())}</div>"
                     f"<div><strong>{esc(user['username'])}</strong>"
-                    f"<div class='muted'>{'Administrator' if is_admin else 'Teammitglied'}</div></div></div>",
+                    f"<div class='muted'>{'Alpha-Owner' if is_owner else 'Administrator' if is_admin else 'Teammitglied'}</div></div></div>",
                     unsafe_allow_html=True)
 counts = {"applicants": sum(x.get("status") not in ("Angenommen", "Abgelehnt") for x in data["applicants"]),
           "tasks": sum(x.get("status") != "Erledigt" for x in data["tasks"]),
@@ -826,6 +838,55 @@ elif key == "tasks":
                 update("tasks", x["id"], f"Aufgabe „{x['title']}“", status="Offen" if done else "Erledigt")
             if b.button("🗑 Löschen", key=f"del_tasks_{x['id']}"): remove("tasks", x["id"], "Aufgabe gelöscht")
 
+    st.markdown("---")
+    st.subheader("💡 Aufgabenvorschläge")
+    linked = rec.get("member") or next((n for n in rank_of if n.lower() == user["username"].lower()), "")
+    can_approve = is_owner or rank_of.get(linked) in TASK_APPROVER_RANKS
+    st.caption("Jeder kann Aufgaben vorschlagen. Übernehmen oder ablehnen dürfen: " + ", ".join(TASK_APPROVER_RANKS) + ".")
+    with st.expander("➕ Aufgabe vorschlagen"):
+        with st.form("add_idea", clear_on_submit=True):
+            it = st.text_input("Vorschlag (kurz und knapp)")
+            idesc = st.text_area("Beschreibung (optional)", height=90)
+            if st.form_submit_button("Vorschlag einreichen", use_container_width=True):
+                if it.strip():
+                    with edit(f"Aufgabenvorschlag „{it.strip()}“") as d:
+                        d["task_ideas"].append({"id": uid(), "title": it.strip(), "description": idesc.strip(),
+                                                "author": user["username"], "date": date.today().isoformat(),
+                                                "status": "Offen", "handled_by": "", "note": ""})
+                    st.rerun()
+                else: st.warning("Bitte einen Titel eingeben.")
+    open_ideas = [i for i in data["task_ideas"] if i["status"] == "Offen"]
+    if not open_ideas: st.info("Keine offenen Vorschläge.")
+    for i in reversed(open_ideas):
+        desc = f"<div style='white-space:pre-wrap;margin-top:8px'>{esc(i['description'])}</div>" if i.get("description") else ""
+        show(f"<strong>{esc(i['title'])}</strong> {chip('Vorschlag', '#3B82F6')}<br>"
+             f"<span class='muted'>von {esc(i['author'])} | {fmt(i['date'])}</span>{desc}")
+        b1, b2, b3, _ = st.columns([2, 2, 2, 4])
+        if can_approve:
+            with b1.popover("✅ Übernehmen"):
+                pr = st.selectbox("Priorität", PRIOS, index=1, key=f"ip{i['id']}")
+                who = st.multiselect("Zuständig", member_names, format_func=mlabel, key=f"iw{i['id']}")
+                if st.button("Als Aufgabe anlegen", key=f"ia{i['id']}"):
+                    with edit(f"Vorschlag „{i['title']}“ übernommen") as d:
+                        d["tasks"].append({"id": uid(), "title": i["title"], "assignee": ", ".join(who) or "Team",
+                                           "priority": pr, "status": "Offen"})
+                        for x in d["task_ideas"]:
+                            if x["id"] == i["id"]: x.update(status="Angenommen", handled_by=user["username"])
+                    st.rerun()
+            with b2.popover("❌ Ablehnen"):
+                nt = st.text_input("Grund (optional)", key=f"in{i['id']}")
+                if st.button("Vorschlag ablehnen", key=f"ir{i['id']}"):
+                    update("task_ideas", i["id"], f"Vorschlag „{i['title']}“ abgelehnt", status="Abgelehnt",
+                           handled_by=user["username"], note=nt.strip())
+        if (can_approve or i["author"] == user["username"]) and b3.button("🗑 Löschen", key=f"id{i['id']}"):
+            remove("task_ideas", i["id"], "Aufgabenvorschlag")
+    handled = [i for i in data["task_ideas"] if i["status"] != "Offen"][-8:]
+    if handled:
+        show("<strong>Zuletzt bearbeitet</strong>" + "".join(
+            f"<div style='margin-top:6px'>{chip(i['status'], '#22C55E' if i['status'] == 'Angenommen' else '#9CA3AF')} {esc(i['title'])} "
+            f"<span class='muted'>– von {esc(i['author'])}, bearbeitet von {esc(i['handled_by'])}"
+            f"{(' · ' + esc(i['note'])) if i.get('note') else ''}</span></div>" for i in reversed(handled)))
+
 # --- PROTOKOLLE ---
 elif key == "protocols":
     st.title("📝 Teamsitzungs-Protokolle")
@@ -903,8 +964,8 @@ elif key == "wishes":
 # --- DISCORD ---
 elif key == "discord":
     st.title("🔔 Discord-Anbindung")
-    if not is_admin:
-        st.error("Nur für Administratoren.")
+    if not is_owner:
+        st.error("Kein Zugriff.")
         st.stop()
     cfg = dc_cfg()
     st.caption("Webhooks schicken Nachrichten in je einen Channel. Für das automatische Ändern von Discord-Rollen wird zusätzlich ein Bot benötigt.")
@@ -991,6 +1052,7 @@ elif key == "accounts":
             un = st.text_input("Benutzername")
             up = st.text_input("Start-Passwort (min. 3 Zeichen)", type="password")
             ua = st.checkbox("Administrator (voller Zugriff)")
+            uo = st.checkbox("Alpha-Owner (Zugriff auf den Discord-Reiter)") if is_owner else False
             cols = st.columns(3)
             perms = {k: cols[i % 3].selectbox(l, PERM_OPTS, format_func=lambda x: PERM_LABELS[x], index=1, key=f"p_{k}")
                      for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings", "discord")}
@@ -999,10 +1061,13 @@ elif key == "accounts":
                 elif un.strip().lower() in [u["username"].lower() for u in data["users"]]: st.error("Benutzername existiert bereits.")
                 else:
                     with edit(f"Benutzer {un.strip()} angelegt") as d:
-                        d["users"].append({"username": un.strip(), "pw_hash": hash_pw(up), "is_admin": ua, "permissions": perms})
+                        d["users"].append({"username": un.strip(), "pw_hash": hash_pw(up), "is_admin": ua or uo, "is_owner": uo, "permissions": perms})
                     st.rerun()
     for u in data["users"]:
-        with st.expander(f"{u['username']} {'(Administrator)' if u.get('is_admin') else ''}"):
+        with st.expander(f"{u['username']} {'(Alpha-Owner)' if u.get('is_owner') else '(Administrator)' if u.get('is_admin') else ''}"):
+            if u.get("is_owner") and not is_owner:
+                st.info("🔒 Alpha-Owner-Konto: kann nur von einem Alpha-Owner verwaltet werden.")
+                continue
             new_uname = st.text_input("Benutzername ändern", value=u["username"], key=f"nu_{u['username']}")
             if st.button("✏️ Namen speichern", key=f"su_{u['username']}"):
                 new_clean = new_uname.strip()
@@ -1024,6 +1089,12 @@ elif key == "accounts":
             is_self = u["username"] == user["username"]
             adm = st.checkbox("Administrator (voller Zugriff)", value=bool(u.get("is_admin")),
                               disabled=is_self, key=f"adm_{u['username']}")
+            ow = (st.checkbox("Alpha-Owner (übergeordnet, einziger Zugriff auf den Discord-Reiter)", value=bool(u.get("is_owner")),
+                              disabled=is_self, key=f"own_{u['username']}") if is_owner else bool(u.get("is_owner")))
+            lm_opts = ["–"] + member_names
+            lm = st.selectbox("Verknüpftes Teammitglied (für rangabhängige Rechte)", lm_opts,
+                              index=lm_opts.index(u["member"]) if u.get("member") in lm_opts else 0,
+                              format_func=lambda n: n if n == "–" else mlabel(n), key=f"lm_{u['username']}")
             cur = u.get("permissions") or {}
             pc = st.columns(3)
             newp = {k: pc[i % 3].selectbox(l, PERM_OPTS, format_func=lambda x: PERM_LABELS[x],
@@ -1035,7 +1106,9 @@ elif key == "accounts":
                     for x in d["users"]:
                         if x["username"] == u["username"]:
                             x["permissions"] = newp
-                            x["is_admin"] = adm
+                            x["is_admin"] = adm or ow
+                            x["member"] = "" if lm == "–" else lm
+                            if is_owner: x["is_owner"] = ow
                 st.success("Rechte gespeichert.")
             st.markdown("---")
             np_ = st.text_input("Neues Passwort setzen (min. 3 Zeichen)", type="password", key=f"np_{u['username']}")
