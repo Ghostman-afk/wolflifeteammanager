@@ -1,9 +1,9 @@
 import streamlit as st
 import json, os, uuid, time, hmac, hashlib, secrets, threading, shutil, base64, random
+import requests
 from urllib.parse import quote
-import re, urllib.request, urllib.error
 from contextlib import contextmanager
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timedelta
 from html import escape as esc
 
 LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logo.jpg")
@@ -11,6 +11,7 @@ st.set_page_config(page_title="Wolf Life Team-Management", page_icon=LOGO if os.
 
 DATA_FILE = "wolflife_team_data.json"
 DEFAULT_THEME = "1. Wolf Life Dark (Rot-Dunkel Standard)"
+PROBATION_DAYS = 14  # Standard-Probezeit in Tagen für den Tracker
 
 # --- THEMES: Name, BG_MAIN, BG_SIDEBAR, BG_CARD, BG_INPUT, ACCENT, ACCENT_HOVER, TEXT_MUTED ---
 _T = [
@@ -33,7 +34,6 @@ _T = [
 _KEYS = ["BG_MAIN", "BG_SIDEBAR", "BG_CARD", "BG_INPUT", "ACCENT", "ACCENT_HOVER", "TEXT_MUTED"]
 THEMES = {n: dict(zip(_KEYS, v), TEXT_MAIN="#FFFFFF") for n, *v in _T}
 
-# --- FESTE ZUORDNUNG DER 15 HINTERGRUNDBILDER IM ORDNER "themes_bg" ---
 THEME_BG_MAP = {
     DEFAULT_THEME: "theme_01_wolflife_dark.jpg",
     "2. Midnight Blue (Blau-Taktisch)": "theme_02_midnight_blue.jpg",
@@ -53,7 +53,7 @@ THEME_BG_MAP = {
 }
 
 RANKS = [
-    "Owner", "Projektleitung", "Developer", "stellvertretende Projektleitung",
+    "Owner", "Projektleitung", "stellvertretende Projektleitung",
     "Teamleitung", "stellvertretende Teamleitung",
     "Administrator", "Test-Administrator",
     "Moderator 3", "Moderator 2", "Moderator 1", "Test-Moderator",
@@ -64,28 +64,33 @@ APP_STATUS = ["Bewerbung eingegangen", "Im Testgespräch", "Testphase läuft", "
 APP_ROLES = {"Supporter (Bewerbung)": "Test-Supporter", "Moderator (Bewerbung)": "Test-Moderator",
              "Administrator (Bewerbung)": "Test-Administrator"}
 PRIOS = ["Hoch", "Mittel", "Niedrig"]
+SHIFT_TYPES = ["Support-Dienst", "Ticket-Schicht", "Ingame-Präsenz", "Teamsitzung", "Einweisung / Training", "Server-Event"]
+SHIFT_COL = {"Support-Dienst": "#3B82F6", "Ticket-Schicht": "#06B6D4", "Ingame-Präsenz": "#22C55E",
+             "Teamsitzung": "#A855F7", "Einweisung / Training": "#F59E0B", "Server-Event": "#EF4444"}
 PERM_OPTS = ["full", "readonly", "absence_own", "hidden"]
 PERM_LABELS = {"full": "Vollzugriff", "readonly": "Nur-Lesen", "absence_own": "Eigene Abmeldung", "hidden": "Versteckt"}
-TASK_APPROVER_RANKS = ["Owner", "Projektleitung", "Developer"]  # dürfen Aufgabenvorschläge übernehmen
-DEF_PERM = {"wishes": "readonly"}  # Teamwünsche sind standardmäßig für alle sichtbar
-WISH_STATUS = ["Neu", "In Prüfung", "Geplant", "Umgesetzt", "Abgelehnt"]
-WISH_OPEN = ("Neu", "In Prüfung", "Geplant")
-WISH_COL = {"Neu": "#3B82F6", "In Prüfung": "#F59E0B", "Geplant": "#A855F7", "Umgesetzt": "#22C55E", "Abgelehnt": "#9CA3AF"}
-WISH_CATS = ["🎨 Design", "⚙️ Funktion", "🐞 Fehler", "💬 Sonstiges"]
 STATUS_COL = {"Aktiv": "#22C55E", "Probezeit": "#F59E0B", "Abgemeldet": "#9CA3AF"}
 PRIO_COL = {"Hoch": "#EF4444", "Mittel": "#F59E0B", "Niedrig": "#22C55E"}
+
 TABS = [
     ("dashboard", "📊 Dashboard"), ("team", "👥 Team-Übersicht"), ("archive", "🗄️ Ehemalige"),
-    ("applicants", "📋 Bewerber"), ("wishes", "💡 Teamwünsche"),
+    ("applicants", "📋 Bewerber"), ("calendar", "🗓️ Dienstplan & Kalender"),
     ("warnings", "⚠️ Verwarnungen"), ("absences", "📅 Abmeldungen"), ("tasks", "✅ Aufgaben"),
     ("protocols", "📝 Protokolle"), ("notes", "📌 Notizen"), ("settings", "⚙️ Einstellungen"),
-    ("accounts", "🔑 Benutzer & Rechte"), ("discord", "🔔 Discord"),
+    ("accounts", "🔑 Benutzer & Rechte"),
+]
+
+WEBHOOK_CHANNELS = [
+    ("absences", "📅 Abmeldungen-Channel"),
+    ("applicants", "📋 Bewerber-Channel"),
+    ("warnings", "⚠️ Verwarnungen-Channel"),
+    ("team", "👥 Team- & Kader-Channel"),
+    ("general", "📢 Allgemein (Aufgaben, Protokolle & Dienstplan)"),
 ]
 
 
 def rank_color(r):
     if r == "Owner": return "#A855F7"
-    if r == "Developer": return "#FFFFFF"
     if "Projektleitung" in r: return "#FF69B4"
     if "Teamleitung" in r: return "#FF7B00"
     if "Administrator" in r: return "#FF2A2A"
@@ -107,7 +112,6 @@ def logo_html(width):
 
 
 def skyline_uri(color):
-    """Los-Santos-Skyline mit Palmen als dezenter Hintergrund (wie im Logo)."""
     rnd, parts, x = random.Random(7), [], 0
     while x < 1600:
         w, h = rnd.randint(40, 90), rnd.randint(60, 190)
@@ -138,95 +142,25 @@ def fmt(s):
     except Exception: return s or "-"
 
 
-# --- DISCORD (Webhooks + Bot für Rollen) ---
-DC_CFG_FILE = "discord_config.json"  # getrennt von den Teamdaten, damit Token nicht im Backup landen
-DISCORD_API = "https://discord.com/api/v10"
-DC_HOOKS = {"team": "👥 Team-Updates", "protocols": "📝 Protokolle", "warnings": "⚠️ Verwarnungen", "absences": "📅 Abmeldungen"}
-DC_HOOK_RE = re.compile(r"^https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/(?:v\d+/)?webhooks/\d+/[\w-]+$")
-DC_ERR = {0: "Keine Verbindung zu Discord.", 401: "Bot-Token ungültig.",
-          403: "Bot darf die Rolle nicht vergeben (Recht „Rollen verwalten“ fehlt oder Bot-Rolle steht nicht über der Zielrolle).",
-          404: "Mitglied nicht auf dem Server oder Server-/Rollen-ID falsch."}
-
-
-@st.cache_resource
-def _dc_log(): return []
-
-
-def dc_cfg():
-    cfg = {"webhooks": {}, "bot_token": "", "guild_id": "", "roles": {}, "sync_roles": False}
+def probation_info(m):
+    """Berechnet Fortschritt und Status der Probezeit (14 Tage)."""
+    start_str = m.get("probation_start") or m.get("joined")
     try:
-        with open(DC_CFG_FILE, encoding="utf-8") as f: cfg.update(json.load(f))
-    except Exception: pass
-    return cfg
-
-
-def dc_save(cfg):
-    tmp = DC_CFG_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f: json.dump(cfg, f, indent=2, ensure_ascii=False)
-    try: os.chmod(tmp, 0o600)
-    except Exception: pass
-    os.replace(tmp, DC_CFG_FILE)
-
-
-def _dc_request(method, url, payload=None, token=None):
-    h = {"Content-Type": "application/json", "User-Agent": "DiscordBot (https://wolflife.local, 1.0)"}
-    if token: h["Authorization"] = f"Bot {token}"
-    data = json.dumps(payload).encode() if payload is not None else b""
-    try:
-        with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=h, method=method), timeout=8) as r:
-            return r.status, ""
-    except urllib.error.HTTPError as e:
-        return e.code, e.read().decode("utf-8", "ignore")[:150]
-    except Exception as e:
-        return 0, str(e)[:150]
-
-
-def dc_embed(title, color, fields=(), desc=""):
-    e = {"title": title[:250], "color": color, "timestamp": datetime.now(timezone.utc).isoformat(),
-         "footer": {"text": "Wolf Life Team Suite"}}
-    if desc: e["description"] = desc[:3500] + ("…" if len(desc) > 3500 else "")
-    if fields: e["fields"] = [{"name": n[:250], "value": (str(v) or "-")[:1000], "inline": len(str(v)) < 40} for n, v in fields]
-    return e
-
-
-def dc_post(hook, embed, cfg, log):
-    url = cfg["webhooks"].get(hook, "")
-    if not url: return None
-    code, err = _dc_request("POST", url, {"embeds": [embed], "allowed_mentions": {"parse": []}})
-    ok = code in (200, 204)
-    log.append((datetime.now().strftime("%d.%m. %H:%M:%S"), DC_HOOKS[hook], "✅ gesendet" if ok else f"❌ {code} {err}"))
-    del log[:-30]
-    return ok, code, err
-
-
-def dc_send(hook, title, color, fields=(), desc=""):
-    """Nachricht im Hintergrund senden, damit die Seite nicht wartet."""
-    cfg, log = dc_cfg(), _dc_log()
-    if cfg["webhooks"].get(hook):
-        threading.Thread(target=dc_post, args=(hook, dc_embed(title, color, fields, desc), cfg, log), daemon=True).start()
-
-
-def dc_mention(m):
-    d = str(m.get("discord_id", "-"))
-    return f"<@{d}> ({m['name']})" if d.isdigit() else m["name"]
-
-
-def dc_sync_role(discord_id, old, new):
-    cfg = dc_cfg()
-    tok = os.environ.get("DISCORD_BOT_TOKEN") or cfg["bot_token"]
-    if not (cfg["sync_roles"] and tok and cfg["guild_id"]): return None
-    if not str(discord_id).isdigit():
-        return "⚠️ Rang geändert, aber Discord-Rolle nicht angepasst: Beim Mitglied fehlt eine gültige Discord-ID (Zahl)."
-    new_r, old_r = cfg["roles"].get(new, ""), cfg["roles"].get(old, "")
-    if not new_r: return f"⚠️ Rang geändert, aber für „{new}“ ist keine Discord-Rolle zugeordnet."
-    base, log, errs = f"{DISCORD_API}/guilds/{cfg['guild_id']}/members/{discord_id}/roles", _dc_log(), []
-    for method, rid in ([("DELETE", old_r)] if old_r and old_r != new_r else []) + [("PUT", new_r)]:
-        code, err = _dc_request(method, f"{base}/{rid}", token=tok)
-        ok = code in (200, 204)
-        log.append((datetime.now().strftime("%d.%m. %H:%M:%S"), "Rollen-Sync", "✅ ok" if ok else f"❌ {code} {err}"))
-        if not ok: errs.append(DC_ERR.get(code, f"Fehler {code}."))
-    del log[:-30]
-    return "✅ Discord-Rolle angepasst." if not errs else "⚠️ Discord-Rolle nicht (vollständig) angepasst: " + " ".join(dict.fromkeys(errs))
+        start_dt = date.fromisoformat(start_str)
+    except Exception:
+        start_dt = date.today()
+    days_passed = max(0, (date.today() - start_dt).days)
+    pct = min(100, int((days_passed / PROBATION_DAYS) * 100))
+    if days_passed >= PROBATION_DAYS:
+        col = "#22C55E"
+        status_lbl = f"✅ Probezeit abgeschlossen ({days_passed}/{PROBATION_DAYS} Tage) – Bereit zur Übernahme!"
+    elif days_passed >= PROBATION_DAYS - 3:
+        col = "#F59E0B"
+        status_lbl = f"⏳ Endspurt: Tag {days_passed} von {PROBATION_DAYS} (noch {PROBATION_DAYS - days_passed} Tag(e))"
+    else:
+        col = "#3B82F6"
+        status_lbl = f"🧪 Tag {days_passed} von {PROBATION_DAYS} (seit {fmt(start_dt.isoformat())})"
+    return days_passed, pct, col, status_lbl
 
 
 # --- DATEN (atomar speichern, gesperrt, mit Backup) ---
@@ -235,7 +169,7 @@ def _lock(): return threading.Lock()
 
 
 DEFAULTS = {"members": [], "applicants": [], "warnings": [], "absences": [], "tasks": [],
-            "protocols": [], "notes": "", "users": [], "log": [], "settings": {}, "archive": [], "wishes": [], "task_ideas": []}
+            "protocols": [], "schedules": [], "notes": "", "users": [], "log": [], "settings": {}, "archive": []}
 
 
 def load_data():
@@ -261,7 +195,6 @@ def save_data(d):
 
 @contextmanager
 def edit(action=None):
-    """Lädt frische Daten, lässt sie ändern und speichert – verhindert überschriebene Änderungen."""
     with _lock():
         d = load_data()
         yield d
@@ -283,18 +216,43 @@ def remove(coll, iid, label):
     st.rerun()
 
 
-@st.cache_resource
-def _fails(): return {}
+# --- DISCORD WEBHOOK EMBEDS (AUSFÜHRLICH & FORMATIERT) ---
+def send_discord_embed(channel_key, title, description, color_hex="#EF4444", fields=None, author_name=None):
+    """Sendet ein ausführliches, sauber formatiertes Discord-Embed an den jeweiligen Channel-Webhook."""
+    d = load_data()
+    webhooks = d.get("settings", {}).get("webhooks", {})
+    url = (webhooks.get(channel_key) or webhooks.get("general") or "").strip()
+    if not url or "api/webhooks" not in url:
+        return
 
+    try:
+        color_int = int(color_hex.lstrip("#"), 16)
+    except Exception:
+        color_int = 0xEF4444
 
-def locked(name):
-    return _fails().get(name.strip().lower(), (0, 0))[1] > time.time()
+    embed = {
+        "title": title,
+        "description": description,
+        "color": color_int,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "footer": {
+            "text": f"🐺 Wolf Life Team-Suite • Ausgeführt von {author_name or 'System'}"
+        }
+    }
+    if fields:
+        embed["fields"] = [
+            {"name": f["name"], "value": str(f["value"]) or "-", "inline": f.get("inline", True)}
+            for f in fields
+        ]
 
-
-def register_fail(name):
-    k = name.strip().lower()
-    n = _fails().get(k, (0, 0))[0] + 1
-    _fails()[k] = (0, time.time() + 300) if n >= 5 else (n, 0)
+    payload = {
+        "username": "Wolf Life • Team-Management",
+        "embeds": [embed]
+    }
+    try:
+        requests.post(url, json=payload, timeout=4)
+    except Exception:
+        pass
 
 
 # --- PASSWÖRTER & LOGIN ---
@@ -349,7 +307,7 @@ CSS = """
 [data-testid=stHeader]{background:transparent}
 .block-container{padding-top:2rem;max-width:1400px}
 #MainMenu,footer{visibility:hidden}
-[data-testid=stSidebar]{background:linear-gradient(180deg,@BG_SIDEBAR,@BG_MAIN);border-right:1px solid rgba(@ACCENT_RGB,.35);box-shadow:4px 0 28px rgba(@ACCENT_RGB,.08);min-width:280px!important}
+[data-testid=stSidebar]{background:linear-gradient(180deg,@BG_SIDEBAR,@BG_MAIN);border-right:1px solid rgba(@ACCENT_RGB,.35);box-shadow:4px 0 28px rgba(@ACCENT_RGB,.08);min-width:290px!important}
 h1,h2,h3,h4,h5,h6,p,label,span:not([style*="color"]){color:@TEXT_MAIN!important}
 .stApp h1{font-weight:900!important;letter-spacing:1px;text-transform:uppercase;text-shadow:0 2px 0 rgba(0,0,0,.6),0 0 24px rgba(@ACCENT_RGB,.55);padding-bottom:8px;border-bottom:3px solid @ACCENT;display:inline-block;margin-bottom:.5rem!important}
 .block-container h3::before{content:"◢ ";color:@ACCENT!important;font-size:.8em}
@@ -364,6 +322,8 @@ hr{border:none!important;height:1px!important;background:linear-gradient(90deg,t
 .metric-value{font-size:34px!important;font-weight:800;text-shadow:0 0 18px rgba(@ACCENT_RGB,.55)}
 .content-box .muted,.muted{color:@TEXT_MUTED!important;font-size:12px}
 .chip{border:1px solid;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+.prob-bar-bg{width:100%;height:8px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden;margin-top:6px}
+.prob-bar-fill{height:100%;border-radius:999px;transition:width .3s ease}
 [data-testid=stExpander],[data-testid=stExpander] details,[data-testid=stExpander] summary,[data-testid=stExpanderDetails]{background:@BG_CARD!important;color:@TEXT_MAIN!important}
 [data-testid=stExpander]{border:1px solid rgba(@ACCENT_RGB,.25)!important;border-radius:6px 16px 6px 16px!important;overflow:hidden!important}
 [data-testid=stForm]{background:@BG_CARD;border:1px solid rgba(@ACCENT_RGB,.30)!important;border-radius:6px 18px 6px 18px;box-shadow:0 0 30px rgba(@ACCENT_RGB,.10)}
@@ -422,26 +382,20 @@ THEME_BG_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "them
 def get_theme_bg_style(current_theme_name):
     if not os.path.exists(THEME_BG_FOLDER):
         return ""
-    
     expected_file = THEME_BG_MAP.get(current_theme_name)
     matching_path = None
-    
     if expected_file:
-        # Prüfe exakten Dateinamen sowie alternative Bildendungen (.png, .jpeg, .webp)
         base_name = os.path.splitext(expected_file)[0]
         for ext in (".jpg", ".png", ".jpeg", ".webp", ".JPG", ".PNG"):
             candidate = os.path.join(THEME_BG_FOLDER, base_name + ext)
             if os.path.exists(candidate):
                 matching_path = candidate
                 break
-
     if not matching_path:
         return ""
-
     encoded = _b64(matching_path)
     ext = os.path.splitext(matching_path)[1].lower()
     mime_type = "image/png" if ext == ".png" else ("image/webp" if ext == ".webp" else "image/jpeg")
-    
     return f"""
     .stApp {{
         background: linear-gradient(rgba(13, 13, 17, 0.85), rgba(13, 13, 17, 0.85)), 
@@ -476,13 +430,6 @@ if not any(u.get("is_admin") for u in data["users"]):
                 st.rerun()
     st.stop()
 
-if not any(u.get("is_owner") for u in data["users"]):
-    _first = next(u for u in data["users"] if u.get("is_admin"))
-    with edit("Alpha-Owner festgelegt") as d:
-        for x in d["users"]:
-            if x["username"] == _first["username"]: x["is_owner"] = True
-    st.rerun()
-
 if not ss.user:
     c = st.columns([1, 1.2, 1])[1]
     c.markdown(f"<div style='text-align:center'>{logo_html(340) or '<h2>🐺 WOLF LIFE</h2>'}"
@@ -491,36 +438,30 @@ if not ss.user:
         n = st.text_input("Benutzername")
         p = st.text_input("Passwort", type="password")
         if st.form_submit_button("Anmelden", use_container_width=True):
-            if locked(n):
-                st.error("Zu viele Fehlversuche. Bitte 5 Minuten warten.")
+            u = authenticate(n, p)
+            if u:
+                ss.user = {"username": u["username"], "is_admin": bool(u.get("is_admin")),
+                           "permissions": u.get("permissions") or {}}
+                st.rerun()
             else:
-                u = authenticate(n, p)
-                if u:
-                    ss.user = {"username": u["username"], "is_admin": bool(u.get("is_admin")),
-                               "permissions": u.get("permissions") or {}}
-                    st.rerun()
-                register_fail(n)
                 st.error("Falscher Benutzername oder falsches Passwort!")
     st.stop()
 
 # --- SIDEBAR ---
 rec = next((x for x in data["users"] if x["username"] == ss.user["username"]), None)
-if not rec:  # Benutzer wurde gelöscht
+if not rec:
     ss.user = None
     st.rerun()
 ss.user["is_admin"] = bool(rec.get("is_admin"))
 ss.user["permissions"] = rec.get("permissions") or {}
-ss.user["is_owner"] = bool(rec.get("is_owner"))
 user = ss.user
 is_admin = user["is_admin"]
-is_owner = user["is_owner"]
 
 
 def mode_of(key):
-    if key == "discord": return "full" if is_owner else "hidden"  # nur Alpha-Owner
     if is_admin or key == "settings": return "full"
     if key == "accounts": return "hidden"
-    return user["permissions"].get(key, DEF_PERM.get(key, "hidden"))
+    return user["permissions"].get(key, "hidden")
 
 
 st.sidebar.markdown(f"{logo_html(230) or '<h2>🐺 WOLF LIFE</h2>'}<div class='tagline' style='text-align:center;font-size:11px;margin:4px 0 14px'>Los Santos · Team Suite</div>",
@@ -529,14 +470,17 @@ visible = [(k, l) for k, l in TABS if mode_of(k) != "hidden"]
 if ss.get("page") not in [k for k, _ in visible]: ss.page = visible[0][0]
 st.sidebar.markdown(f"<div class='user-card'><div class='avatar'>{esc(user['username'][:1].upper())}</div>"
                     f"<div><strong>{esc(user['username'])}</strong>"
-                    f"<div class='muted'>{'Alpha-Owner' if is_owner else 'Administrator' if is_admin else 'Teammitglied'}</div></div></div>",
+                    f"<div class='muted'>{'Administrator' if is_admin else 'Teammitglied'}</div></div></div>",
                     unsafe_allow_html=True)
+
+# --- GLOBALE SUCHE IN DER SIDEBAR ---
+global_q = st.sidebar.text_input("🔍 Suche über alles...", placeholder="Name, Grund, Aufgabe...", key="global_search_input").strip()
+
 counts = {"applicants": sum(x.get("status") not in ("Angenommen", "Abgelehnt") for x in data["applicants"]),
-          "tasks": sum(x.get("status") != "Erledigt" for x in data["tasks"]),
-          "wishes": sum(w.get("status") == "Neu" for w in data["wishes"])}
-NAV_GROUPS = [("Übersicht", ["dashboard"]), ("Team", ["team", "archive", "applicants", "wishes"]),
-              ("Verwaltung", ["warnings", "absences", "tasks", "protocols", "notes"]),
-              ("System", ["settings", "accounts", "discord"])]
+          "tasks": sum(x.get("status") != "Erledigt" for x in data["tasks"])}
+NAV_GROUPS = [("Übersicht", ["dashboard"]), ("Team", ["team", "archive", "applicants"]),
+              ("Verwaltung", ["calendar", "warnings", "absences", "tasks", "protocols", "notes"]),
+              ("System", ["settings", "accounts"])]
 for grp, grp_keys in NAV_GROUPS:
     items = [(k, l) for k, l in visible if k in grp_keys]
     if not items: continue
@@ -544,9 +488,10 @@ for grp, grp_keys in NAV_GROUPS:
     for k, l in items:
         n = counts.get(k, 0)
         if st.sidebar.button(f"{l}  ·  {n}" if n else l, key=f"nav_{k}",
-                             type="primary" if ss.page == k else "secondary", use_container_width=True):
+                             type="primary" if (ss.page == k and not global_q) else "secondary", use_container_width=True):
             ss.page = k
             st.rerun()
+
 key = ss.page
 perm_mode = mode_of(key)
 can_write = perm_mode in ("full", "absence_own") if key == "absences" else (perm_mode == "full")
@@ -569,23 +514,95 @@ rank_of = {m["name"]: m["rank"] for m in data["members"]}
 def mlabel(n): return f"{n} ({rank_of[n]})" if n in rank_of else n
 
 
-def flash(msg, kind="info"): ss.setdefault("flash", []).append((kind, msg))
+# =====================================================================
+# GLOBALE SUCHE (ÜBER ALLE BEREICHE)
+# =====================================================================
+if global_q:
+    q_low = global_q.lower()
+    st.title(f"🔍 Globale Suche: „{esc(global_q)}“")
+    st.caption("Durchsucht gleichzeitig Teammitglieder, Ehemalige, Bewerber, Dienstplan, Verwarnungen, Abmeldungen, Aufgaben & Protokolle. Leere das Suchfeld links, um zurückzukehren.")
+    total_hits = 0
+
+    # 1. Teammitglieder
+    if mode_of("team") != "hidden":
+        hits = [m for m in data["members"] if q_low in m["name"].lower() or q_low in m["rank"].lower() or q_low in m.get("discord_id", "").lower() or q_low in m["status"].lower()]
+        if hits:
+            st.subheader(f"👥 Teammitglieder ({len(hits)})")
+            for m in hits:
+                total_hits += 1
+                show(f"<strong>{esc(m['name'])}</strong> {badge(m['rank'])} {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br><span class='muted'>Discord-ID: {esc(m.get('discord_id', '-'))} | Im Team seit: {fmt(m.get('joined'))}</span>")
+
+    # 2. Ehemalige
+    if mode_of("archive") != "hidden":
+        hits = [a for a in data["archive"] if q_low in a["name"].lower() or q_low in a.get("reason", "").lower() or q_low in a.get("rank", "").lower()]
+        if hits:
+            st.subheader(f"🗄️ Ehemalige ({len(hits)})")
+            for a in hits:
+                total_hits += 1
+                show(f"<strong>{esc(a['name'])}</strong> {badge(a['rank'])}<br><span class='muted'>Entfernt am {fmt(a['removed'])} von {esc(a['removed_by'])}</span><br>Grund: {esc(a['reason'])}")
+
+    # 3. Bewerber
+    if mode_of("applicants") != "hidden":
+        hits = [ap for ap in data["applicants"] if q_low in ap["name"].lower() or q_low in ap["role"].lower() or q_low in ap.get("notes", "").lower() or q_low in ap["status"].lower()]
+        if hits:
+            st.subheader(f"📋 Bewerber ({len(hits)})")
+            for ap in hits:
+                total_hits += 1
+                show(f"<strong>{esc(ap['name'])}</strong> – {esc(ap['role'])} ({esc(ap['status'])})<br><span class='muted'>Datum: {fmt(ap['date'])} | Notiz: {esc(ap.get('notes') or '-')}</span>")
+
+    # 4. Dienstplan & Kalender
+    if mode_of("calendar") != "hidden":
+        hits = [s for s in data["schedules"] if q_low in s.get("title", "").lower() or q_low in s.get("type", "").lower() or q_low in s.get("assignees", "").lower() or q_low in s.get("notes", "").lower()]
+        if hits:
+            st.subheader(f"🗓️ Dienstplan & Kalender ({len(hits)})")
+            for s in hits:
+                total_hits += 1
+                show(f"{chip(s['type'], SHIFT_COL.get(s['type'], '#3B82F6'))} <strong>{esc(s['title'])}</strong> ({fmt(s['date'])}, {esc(s['time_from'])}–{esc(s['time_to'])})<br><span class='muted'>Eingeteilt: {esc(s['assignees'])}</span>")
+
+    # 5. Verwarnungen
+    if mode_of("warnings") != "hidden":
+        hits = [w for w in data["warnings"] if q_low in w["member"].lower() or q_low in w["reason"].lower() or q_low in w["level"].lower()]
+        if hits:
+            st.subheader(f"⚠️ Verwarnungen ({len(hits)})")
+            for w in hits:
+                total_hits += 1
+                show(f"<strong>{esc(mlabel(w['member']))}</strong> | {chip(w['level'], '#EF4444')}<br>Grund: {esc(w['reason'])} <span class='muted'>(Von {esc(w['issuer'])}, {fmt(w.get('date'))})</span>")
+
+    # 6. Abmeldungen
+    if mode_of("absences") != "hidden":
+        hits = [a for a in data["absences"] if q_low in a["name"].lower() or q_low in a.get("reason", "").lower()]
+        if hits:
+            st.subheader(f"📅 Abmeldungen ({len(hits)})")
+            for a in hits:
+                total_hits += 1
+                show(f"<strong>{esc(mlabel(a['name']))}</strong> ({fmt(a['from_date'])} ➔ {fmt(a['to_date'])})<br>Grund: {esc(a['reason'])}")
+
+    # 7. Aufgaben
+    if mode_of("tasks") != "hidden":
+        hits = [x for x in data["tasks"] if q_low in x["title"].lower() or q_low in x["assignee"].lower()]
+        if hits:
+            st.subheader(f"✅ Aufgaben ({len(hits)})")
+            for x in hits:
+                total_hits += 1
+                show(f"{chip(x['priority'], PRIO_COL.get(x['priority'], '#9CA3AF'))} <strong>{esc(x['title'])}</strong> ({esc(x['status'])})<br><span class='muted'>Zuständig: {esc(x['assignee'])}</span>")
+
+    # 8. Protokolle
+    if mode_of("protocols") != "hidden":
+        hits = [p for p in data["protocols"] if q_low in p["title"].lower() or q_low in p.get("participants", "").lower() or q_low in p.get("content", "").lower()]
+        if hits:
+            st.subheader(f"📝 Protokolle ({len(hits)})")
+            for p in hits:
+                total_hits += 1
+                show(f"<strong>{esc(p['title'])}</strong> <span class='muted'>({esc(p['date'])} | Teilnehmer: {esc(p['participants'])})</span>")
+
+    if total_hits == 0:
+        st.info(f"Keine Treffer für „{global_q}“ gefunden.")
 
 
-def rank_change(m, new, did):
-    old = m["rank"]
-    up = RANKS.index(new) < RANKS.index(old) if old in RANKS and new in RANKS else None
-    title = "⬆️ Uprank" if up else "⬇️ Downrank" if up is False else "🔄 Rangänderung"
-    color = 0x22C55E if up else 0xEF4444 if up is False else 0x3B82F6
-    dc_send("team", f"{title}: {m['name']}", color, [("Mitglied", dc_mention({**m, "discord_id": did or "-"})),
-            ("Alter Rang", old), ("Neuer Rang", new), ("Durchgeführt von", user["username"])])
-    res = dc_sync_role(did, old, new)
-    if res: flash(res, "success" if res.startswith("✅") else "warning")
-
-for _k, _msg in ss.pop("flash", []): getattr(st, _k)(_msg)
-
-# --- DASHBOARD ---
-if key == "dashboard":
+# =====================================================================
+# DASHBOARD
+# =====================================================================
+elif key == "dashboard":
     st.title("📊 Dashboard & Live-Statistiken")
     st.caption(f"Willkommen zurück, {user['username']}! Heute ist der {date.today().strftime('%d.%m.%Y')}.")
     open_apps = sum(a.get("status") not in ("Angenommen", "Abgelehnt") for a in data["applicants"])
@@ -603,11 +620,9 @@ if key == "dashboard":
         show(rows or "<span class='muted'>Noch keine Teammitglieder eingetragen.</span>")
     with c2:
         st.subheader("📅 Aktuelle Abmeldungen")
-
         def still_active(a):
             try: return date.fromisoformat(a["to_date"]) >= date.today()
             except Exception: return True
-
         act = [a for a in data["absences"] if still_active(a)][-6:]
         show("".join(f"<div><strong>{esc(mlabel(a['name']))}</strong> ({fmt(a['from_date'])} ➔ {fmt(a['to_date'])}): "
                      f"<em>{esc(a['reason'])}</em></div>" for a in act)
@@ -622,12 +637,22 @@ if key == "dashboard":
                      f"<span class='muted'>– {esc(x['assignee'])}</span></div>" for x in ot)
              or "<span class='muted'>Keine offenen Aufgaben. 🎉</span>")
     with c4:
-        st.subheader("🧪 In der Probezeit")
+        st.subheader(f"🧪 Probezeit-Tracker ({PROBATION_DAYS} Tage)")
         pm = [m for m in data["members"] if m["status"] == "Probezeit"]
-        show("".join(f"<div style='margin-bottom:6px'><strong>{esc(m['name'])}</strong> {badge(m['rank'])}</div>" for m in pm)
-             or "<span class='muted'>Niemand in der Probezeit.</span>")
+        if pm:
+            for m in pm:
+                days_passed, pct, col, status_lbl = probation_info(m)
+                show(f"<div style='display:flex;justify-content:space-between;align-items:center'>"
+                     f"<strong>{esc(m['name'])}</strong> {badge(m['rank'])}</div>"
+                     f"<div class='muted' style='margin-top:4px'>{status_lbl}</div>"
+                     f"<div class='prob-bar-bg'><div class='prob-bar-fill' style='width:{pct}%;background:{col}'></div></div>")
+        else:
+            show("<span class='muted'>Niemand in der Probezeit.</span>")
 
-# --- TEAM ---
+
+# =====================================================================
+# TEAM-ÜBERSICHT & PROBEZEIT-TRACKER
+# =====================================================================
 elif key == "team":
     st.title("👥 Team-Übersicht & Kader")
     if can_write:
@@ -635,7 +660,7 @@ elif key == "team":
             with st.form("add_member", clear_on_submit=True):
                 a, b, c, e = st.columns(4)
                 n = a.text_input("Discord Name / Tag")
-                did = b.text_input("Discord-ID (Zahl, für Rollen-Sync)")
+                did = b.text_input("Discord-ID (optional)")
                 r = c.selectbox("Rang", RANKS)
                 s = e.selectbox("Status", MEMBER_STATUS)
                 if st.form_submit_button("Mitglied hinzufügen", use_container_width=True):
@@ -643,10 +668,28 @@ elif key == "team":
                     if not n: st.warning("Bitte einen Namen eingeben.")
                     elif n.lower() in [x.lower() for x in member_names]: st.warning("Dieses Mitglied existiert bereits.")
                     else:
+                        today_iso = date.today().isoformat()
                         with edit(f"Mitglied {n} hinzugefügt") as d:
-                            d["members"].append({"id": uid(), "name": n, "discord_id": did.strip() or "-", "rank": r,
-                                                 "status": s, "joined": date.today().isoformat()})
+                            d["members"].append({
+                                "id": uid(), "name": n, "discord_id": did.strip() or "-", "rank": r,
+                                "status": s, "joined": today_iso,
+                                "probation_start": today_iso if s == "Probezeit" else ""
+                            })
+                        send_discord_embed(
+                            "team",
+                            "🆕 Neues Teammitglied im Kader!",
+                            f"**{n}** wurde soeben offiziell in das Team von **Wolf Life** aufgenommen.",
+                            color_hex=rank_color(r),
+                            fields=[
+                                {"name": "👤 Mitglied", "value": n, "inline": True},
+                                {"name": "🛡️ Rang", "value": r, "inline": True},
+                                {"name": "📌 Status", "value": s, "inline": True},
+                                {"name": "🆔 Discord-ID", "value": did.strip() or "-", "inline": True},
+                            ],
+                            author_name=user["username"]
+                        )
                         st.rerun()
+
     def warn_txt(n):
         c = sum(w["member"] == n or w["member"].startswith(n + " (") for w in data["warnings"])
         return f" | ⚠️ {c} Verwarnung(en)" if c else ""
@@ -657,10 +700,17 @@ elif key == "team":
     shown = [m for m in data["members"] if q in m["name"].lower() and sf in ("Alle", m["status"])]
 
     for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
+        prob_html = ""
+        if m["status"] == "Probezeit":
+            _, pct, pcol, plbl = probation_info(m)
+            prob_html = (f"<div style='margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.06)'>"
+                         f"<span class='muted'>{plbl}</span>"
+                         f"<div class='prob-bar-bg'><div class='prob-bar-fill' style='width:{pct}%;background:{pcol}'></div></div></div>")
+
         card_content = (f"<div style='display:flex;justify-content:space-between;align-items:center;width:100%'>"
                         f"<div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
                         f"<span class='muted'>ID: {esc(m['discord_id'])} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
-                        f"<div style='display:flex;align-items:center;gap:12px;'>{badge(m['rank'])}</div></div>")
+                        f"<div style='display:flex;align-items:center;gap:12px;'>{badge(m['rank'])}</div></div>{prob_html}")
         
         if can_write:
             col_card, col_btn = st.columns([11, 1])
@@ -673,10 +723,33 @@ elif key == "team":
                     a, b = st.columns(2)
                     nr = a.selectbox("Rang", RANKS, index=RANKS.index(m["rank"]) if m["rank"] in RANKS else 0, key=f"r{m['id']}")
                     ns = b.selectbox("Status", MEMBER_STATUS, index=MEMBER_STATUS.index(m["status"]) if m["status"] in MEMBER_STATUS else 0, key=f"s{m['id']}")
-                    nid = st.text_input("Discord-ID (Zahl, für Rollen-Sync)", value="" if m.get("discord_id", "-") == "-" else m["discord_id"], key=f"did{m['id']}")
+                    if ns == "Probezeit":
+                        try: def_pstart = date.fromisoformat(m.get("probation_start") or m.get("joined"))
+                        except Exception: def_pstart = date.today()
+                        pstart_in = st.date_input("Probezeit-Beginn", value=def_pstart, format="DD.MM.YYYY", key=f"ps{m['id']}")
+                    else:
+                        pstart_in = None
+
                     if st.button("💾 Speichern", key=f"sv{m['id']}"):
-                        if nr != m["rank"]: rank_change(m, nr, nid.strip())
-                        update("members", m["id"], f"{m['name']}: {nr}/{ns}", rank=nr, status=ns, discord_id=nid.strip() or "-")
+                        old_r, old_s = m["rank"], m["status"]
+                        ch = {"rank": nr, "status": ns}
+                        if pstart_in:
+                            ch["probation_start"] = pstart_in.isoformat()
+                        if old_r != nr or old_s != ns:
+                            send_discord_embed(
+                                "team",
+                                "🔄 Team-Änderung / Beförderung",
+                                f"Bei **{m['name']}** wurden Rang oder Status angepasst.",
+                                color_hex=rank_color(nr),
+                                fields=[
+                                    {"name": "👤 Mitglied", "value": m["name"], "inline": True},
+                                    {"name": "🛡️ Rang", "value": f"{old_r} ➔ **{nr}**" if old_r != nr else nr, "inline": True},
+                                    {"name": "📌 Status", "value": f"{old_s} ➔ **{ns}**" if old_s != ns else ns, "inline": True},
+                                ],
+                                author_name=user["username"]
+                            )
+                        update("members", m["id"], f"{m['name']}: {nr}/{ns}", **ch)
+
                     st.markdown("---")
                     st.markdown("**Aus dem Team entfernen**")
                     why = st.text_input("Grund (Pflicht)", key=f"why{m['id']}")
@@ -689,12 +762,27 @@ elif key == "team":
                                                      "rank": m["rank"], "joined": m.get("joined", ""),
                                                      "removed": date.today().isoformat(), "reason": why.strip(),
                                                      "removed_by": user["username"]})
-                        st.rerun()
+                            send_discord_embed(
+                                "team",
+                                "🚪 Teammitglied entfernt & archiviert",
+                                f"**{m['name']}** hat das Team verlassen bzw. wurde entfernt.",
+                                color_hex="#EF4444",
+                                fields=[
+                                    {"name": "👤 Ehemaliges Mitglied", "value": m["name"], "inline": True},
+                                    {"name": "🛡️ Letzter Rang", "value": m["rank"], "inline": True},
+                                    {"name": "📝 Grund", "value": why.strip(), "inline": False},
+                                ],
+                                author_name=user["username"]
+                            )
+                            st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
         else:
             show(card_content, "member-card")
 
-# --- EHEMALIGE ---
+
+# =====================================================================
+# EHEMALIGE
+# =====================================================================
 elif key == "archive":
     st.title("🗄️ Ehemalige Teammitglieder")
     st.caption("Hier steht, wer aus dem Team entfernt wurde und warum.")
@@ -709,7 +797,10 @@ elif key == "archive":
              f"<div style='white-space:pre-wrap;margin-top:4px'>{esc(a['reason'])}</div>")
         delete_btn("archive", a["id"], f"Archiv-Eintrag {a['name']}")
 
-# --- BEWERBER ---
+
+# =====================================================================
+# BEWERBER
+# =====================================================================
 elif key == "applicants":
     st.title("📋 Bewerber & Testphase")
     if can_write:
@@ -725,6 +816,19 @@ elif key == "applicants":
                         with edit(f"Bewerbung {n.strip()} erfasst") as d:
                             d["applicants"].append({"id": uid(), "name": n.strip(), "role": role, "status": stat,
                                                     "notes": notes, "date": date.today().isoformat()})
+                        send_discord_embed(
+                            "applicants",
+                            "📋 Neue Teambewerbung eingegangen!",
+                            f"Es wurde eine neue Bewerbung für das **Wolf Life Team** im System hinterlegt.",
+                            color_hex="#3B82F6",
+                            fields=[
+                                {"name": "👤 Bewerber", "value": n.strip(), "inline": True},
+                                {"name": "🎯 Angestrebte Rolle", "value": role, "inline": True},
+                                {"name": "📊 Aktueller Status", "value": stat, "inline": True},
+                                {"name": "📝 Notizen / Eindruck", "value": notes.strip() or "Keine Notizen hinterlegt.", "inline": False},
+                            ],
+                            author_name=user["username"]
+                        )
                         st.rerun()
                     else: st.warning("Bitte einen Namen eingeben.")
     for ap in reversed(data["applicants"]):
@@ -737,17 +841,152 @@ elif key == "applicants":
             with st.expander(f"✏️ {ap['name']} bearbeiten"):
                 ns = st.selectbox("Status", APP_STATUS, index=APP_STATUS.index(ap["status"]) if ap["status"] in APP_STATUS else 0, key=f"as{ap['id']}")
                 if st.button("💾 Status speichern", key=f"asv{ap['id']}"):
+                    col_st = "#22C55E" if ns == "Angenommen" else ("#EF4444" if ns == "Abgelehnt" else "#F59E0B")
+                    send_discord_embed(
+                        "applicants",
+                        "📌 Bewerbungsstatus aktualisiert",
+                        f"Der Status der Bewerbung von **{ap['name']}** wurde geändert.",
+                        color_hex=col_st,
+                        fields=[
+                            {"name": "👤 Bewerber", "value": ap["name"], "inline": True},
+                            {"name": "🎯 Rolle", "value": ap["role"], "inline": True},
+                            {"name": "🔄 Neuer Status", "value": f"**{ns}**", "inline": True},
+                        ],
+                        author_name=user["username"]
+                    )
                     update("applicants", ap["id"], f"Bewerbung {ap['name']} → {ns}", status=ns)
                 if ap["status"] == "Angenommen" and ap["name"].lower() not in [x.lower() for x in member_names]:
                     if st.button("👥 Als Mitglied (Probezeit) übernehmen", key=f"adopt{ap['id']}"):
+                        new_rank = APP_ROLES.get(ap["role"], "Test-Supporter")
+                        today_iso = date.today().isoformat()
                         with edit(f"{ap['name']} ins Team übernommen") as d:
                             d["members"].append({"id": uid(), "name": ap["name"], "discord_id": "-",
-                                                 "rank": APP_ROLES.get(ap["role"], "Test-Supporter"),
-                                                 "status": "Probezeit", "joined": date.today().isoformat()})
+                                                 "rank": new_rank, "status": "Probezeit",
+                                                 "joined": today_iso, "probation_start": today_iso})
+                        send_discord_embed(
+                            "team",
+                            "🎉 Bewerber ins Team übernommen!",
+                            f"**{ap['name']}** hat die Bewerbungsphase bestanden und startet jetzt in die **14-tägige Probezeit**!",
+                            color_hex="#22C55E",
+                            fields=[
+                                {"name": "👤 Neues Teammitglied", "value": ap["name"], "inline": True},
+                                {"name": "🛡️ Einstiegsrang", "value": new_rank, "inline": True},
+                                {"name": "🧪 Probezeit", "value": f"14 Tage (bis {fmt((date.today() + timedelta(days=PROBATION_DAYS)).isoformat())})", "inline": True},
+                            ],
+                            author_name=user["username"]
+                        )
                         st.rerun()
                 delete_btn("applicants", ap["id"], f"Bewerbung {ap['name']}")
 
-# --- VERWARNUNGEN ---
+
+# =====================================================================
+# DIENSTPLAN & KALENDER
+# =====================================================================
+elif key == "calendar":
+    st.title("🗓️ Dienstplan & Team-Kalender")
+    st.caption("Plane Support-Schichten, Teamsitzungen oder Events und sieh auf einen Blick, wer abgemeldet ist.")
+
+    if can_write:
+        with st.expander("➕ Neue Schicht / Termin eintragen"):
+            with st.form("add_sched", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                stitle = c1.text_input("Titel / Schicht-Bezeichnung", placeholder="z.B. Spätschicht Support")
+                stype = c2.selectbox("Kategorie", SHIFT_TYPES)
+                c3, c4, c5 = st.columns(3)
+                sdate = c3.date_input("Datum", value=date.today(), format="DD.MM.YYYY")
+                sfrom = c4.text_input("Von (Uhrzeit)", value="18:00")
+                sto = c5.text_input("Bis (Uhrzeit)", value="22:00")
+                swho = st.multiselect("Eingeteilte Teammitglieder", member_names, format_func=mlabel)
+                snotes = st.text_input("Hinweise (optional)")
+                if st.form_submit_button("Termin im Dienstplan speichern", use_container_width=True):
+                    if not stitle.strip():
+                        st.warning("Bitte einen Titel eingeben.")
+                    else:
+                        who_str = ", ".join(swho) if swho else "Offen / Alle"
+                        with edit(f"Dienstplan-Eintrag „{stitle.strip()}“") as d:
+                            d["schedules"].append({
+                                "id": uid(), "title": stitle.strip(), "type": stype,
+                                "date": sdate.isoformat(), "time_from": sfrom.strip() or "-",
+                                "time_to": sto.strip() or "-", "assignees": who_str, "notes": snotes.strip()
+                            })
+                        send_discord_embed(
+                            "general",
+                            "🗓️ Neuer Eintrag im Dienstplan / Kalender",
+                            f"Es wurde ein neuer Termin für das Team eingetragen.",
+                            color_hex=SHIFT_COL.get(stype, "#3B82F6"),
+                            fields=[
+                                {"name": "📌 Titel", "value": stitle.strip(), "inline": True},
+                                {"name": "🏷️ Kategorie", "value": stype, "inline": True},
+                                {"name": "📅 Datum & Zeit", "value": f"{fmt(sdate.isoformat())} ({sfrom} – {sto} Uhr)", "inline": True},
+                                {"name": "👥 Eingeteilt", "value": who_str, "inline": False},
+                            ],
+                            author_name=user["username"]
+                        )
+                        st.rerun()
+
+    # Wochen-Navigation
+    ss.setdefault("cal_offset", 0)
+    nav1, nav2, nav3 = st.columns([1, 2, 1])
+    if nav1.button("⬅️ Vorherige Woche", use_container_width=True):
+        ss.cal_offset -= 1
+        st.rerun()
+    if nav2.button("📅 Aktuelle Woche anzeigen", use_container_width=True):
+        ss.cal_offset = 0
+        st.rerun()
+    if nav3.button("Nächste Woche ➡️", use_container_width=True):
+        ss.cal_offset += 1
+        st.rerun()
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday()) + timedelta(weeks=ss.cal_offset)
+    sunday = monday + timedelta(days=6)
+    st.subheader(f"📆 Wochenübersicht: {monday.strftime('%d.%m.%Y')} – {sunday.strftime('%d.%m.%Y')}")
+
+    weekdays_de = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+    for i in range(7):
+        day_dt = monday + timedelta(days=i)
+        day_iso = day_dt.isoformat()
+        is_today = (day_dt == today)
+        day_label = f"{weekdays_de[i]}, {day_dt.strftime('%d.%m.%Y')}" + ("  🟢 (HEUTE)" if is_today else "")
+
+        day_shifts = [s for s in data["schedules"] if s.get("date") == day_iso]
+        day_abs = []
+        for a in data["absences"]:
+            try:
+                if date.fromisoformat(a["from_date"]) <= day_dt <= date.fromisoformat(a["to_date"]):
+                    day_abs.append(a)
+            except Exception:
+                pass
+
+        if day_shifts or day_abs or is_today:
+            border_style = f"border-left: 5px solid {t['ACCENT']};" if is_today else ""
+            inner_html = f"<div style='font-size:15px;font-weight:800;margin-bottom:6px'>{esc(day_label)}</div>"
+
+            if day_abs:
+                abs_names = ", ".join(esc(a["name"]) for a in day_abs)
+                inner_html += f"<div style='margin-bottom:6px'>{chip('🚫 Abgemeldet', '#EF4444')} <span class='muted'>{abs_names}</span></div>"
+
+            if day_shifts:
+                for s in sorted(day_shifts, key=lambda x: x.get("time_from", "")):
+                    scol = SHIFT_COL.get(s["type"], "#3B82F6")
+                    note_part = f" · <em>{esc(s['notes'])}</em>" if s.get("notes") else ""
+                    inner_html += (f"<div style='margin-top:4px;padding:6px 10px;background:rgba(255,255,255,.03);border-radius:8px'>"
+                                   f"{chip(s['type'], scol)} <strong>{esc(s['title'])}</strong> "
+                                   f"<span class='muted'>({esc(s['time_from'])} – {esc(s['time_to'])} Uhr)</span><br>"
+                                   f"<span class='muted'>👥 Eingeteilt: {esc(s['assignees'])}{note_part}</span></div>")
+            else:
+                inner_html += "<div class='muted'>Keine Schichten oder Termine geplant.</div>"
+
+            st.markdown(f"<div class='content-box' style='{border_style}'>{inner_html}</div>", unsafe_allow_html=True)
+            if can_write and day_shifts:
+                for s in day_shifts:
+                    if st.button(f"🗑 Termin „{s['title']}“ löschen", key=f"del_sched_{s['id']}"):
+                        remove("schedules", s["id"], f"Termin {s['title']} gelöscht")
+
+
+# =====================================================================
+# VERWARNUNGEN
+# =====================================================================
 elif key == "warnings":
     st.title("⚠️ Verwarnungen & Strikes")
     if can_write:
@@ -763,9 +1002,20 @@ elif key == "warnings":
                             with edit(f"Verwarnung für {wm}") as d:
                                 d["warnings"].append({"id": uid(), "member": wm, "level": wl, "reason": wr.strip(),
                                                       "issuer": user["username"], "date": date.today().isoformat()})
-                            dc_send("warnings", f"⚠️ Verwarnung: {wm}", 0xEF4444,
-                                    [("Mitglied", dc_mention(next((x for x in data["members"] if x["name"] == wm), {"name": wm}))),
-                                     ("Stufe", wl), ("Grund", wr.strip()), ("Ausgestellt von", user["username"])])
+                            total_w = sum(1 for w in load_data()["warnings"] if w["member"] == wm)
+                            send_discord_embed(
+                                "warnings",
+                                "⚠️ Team-Verwarnung / Strike ausgesprochen",
+                                f"Gegen das Teammitglied **{wm}** wurde eine Verwarnung im System vermerkt.",
+                                color_hex="#EF4444" if "Strike 3" in wl else "#F97316",
+                                fields=[
+                                    {"name": "👤 Betroffenes Mitglied", "value": mlabel(wm), "inline": True},
+                                    {"name": "🚨 Verwarnungsstufe", "value": f"**{wl}**", "inline": True},
+                                    {"name": "📊 Gesamtverwarnungen", "value": f"{total_w} Eintrag/Einträge", "inline": True},
+                                    {"name": "📝 Begründung", "value": wr.strip(), "inline": False},
+                                ],
+                                author_name=user["username"]
+                            )
                             st.rerun()
                         else: st.warning("Bitte einen Grund angeben.")
     for w in reversed(data["warnings"]):
@@ -773,7 +1023,10 @@ elif key == "warnings":
              f"<br>Grund: {esc(w['reason'])}")
         delete_btn("warnings", w["id"], "Verwarnung")
 
-# --- ABMELDUNGEN ---
+
+# =====================================================================
+# ABMELDUNGEN
+# =====================================================================
 elif key == "absences":
     st.title("📅 Abmeldungen & Urlaub")
     if perm_mode in ("full", "absence_own"):
@@ -795,12 +1048,23 @@ elif key == "absences":
                     if st.form_submit_button("Speichern", use_container_width=True):
                         if at < af: st.warning("„Bis“ darf nicht vor „Von“ liegen.")
                         else:
+                            days_count = (at - af).days + 1
                             with edit(f"Abmeldung {am}") as d:
                                 d["absences"].append({"id": uid(), "name": am, "from_date": af.isoformat(),
                                                       "to_date": at.isoformat(), "reason": ar})
-                            dc_send("absences", f"📅 Abmeldung: {am}", 0xF59E0B,
-                                    [("Mitglied", dc_mention(next((x for x in data["members"] if x["name"] == am), {"name": am}))),
-                                     ("Von", fmt(af.isoformat())), ("Bis", fmt(at.isoformat())), ("Grund", ar or "-")])
+                            send_discord_embed(
+                                "absences",
+                                "📅 Neue Team-Abmeldung eingetragen",
+                                f"**{am}** hat sich für den unten genannten Zeitraum vom Dienst abgemeldet.",
+                                color_hex="#F59E0B",
+                                fields=[
+                                    {"name": "👤 Teammitglied", "value": mlabel(am), "inline": True},
+                                    {"name": "⏳ Dauer", "value": f"{days_count} Tag(e)", "inline": True},
+                                    {"name": "📆 Zeitraum", "value": f"{fmt(af.isoformat())} ➔ {fmt(at.isoformat())}", "inline": True},
+                                    {"name": "📝 Grund der Abmeldung", "value": ar.strip() or "Kein Grund angegeben.", "inline": False},
+                                ],
+                                author_name=user["username"]
+                            )
                             st.rerun()
                             
     for a in reversed(data["absences"]):
@@ -810,7 +1074,10 @@ elif key == "absences":
             if st.button("🗑 Löschen", key=f"del_abs_{a['id']}"): 
                 remove("absences", a["id"], "Abmeldung gelöscht")
 
-# --- AUFGABEN ---
+
+# =====================================================================
+# AUFGABEN
+# =====================================================================
 elif key == "tasks":
     st.title("✅ Aufgaben-Board")
     if can_write:
@@ -821,9 +1088,22 @@ elif key == "tasks":
                 who = st.multiselect("Zuständig", member_names, format_func=mlabel)
                 if st.form_submit_button("Erstellen", use_container_width=True):
                     if tt.strip():
+                        who_str = ", ".join(who) or "Gesamtes Team"
                         with edit("Aufgabe erstellt") as d:
-                            d["tasks"].append({"id": uid(), "title": tt.strip(), "assignee": ", ".join(who) or "Team",
+                            d["tasks"].append({"id": uid(), "title": tt.strip(), "assignee": who_str,
                                                "priority": tp, "status": "Offen"})
+                        send_discord_embed(
+                            "general",
+                            "✅ Neue Team-Aufgabe erstellt",
+                            f"Im Aufgaben-Board wurde eine neue Aufgabe angelegt.",
+                            color_hex=PRIO_COL.get(tp, "#F59E0B"),
+                            fields=[
+                                {"name": "📋 Aufgabe", "value": tt.strip(), "inline": False},
+                                {"name": "🔥 Priorität", "value": tp, "inline": True},
+                                {"name": "👥 Zuständig", "value": who_str, "inline": True},
+                            ],
+                            author_name=user["username"]
+                        )
                         st.rerun()
                     else: st.warning("Bitte eine Beschreibung eingeben.")
     order = lambda x: (x["status"] == "Erledigt", PRIOS.index(x["priority"]) if x["priority"] in PRIOS else 9)
@@ -838,56 +1118,10 @@ elif key == "tasks":
                 update("tasks", x["id"], f"Aufgabe „{x['title']}“", status="Offen" if done else "Erledigt")
             if b.button("🗑 Löschen", key=f"del_tasks_{x['id']}"): remove("tasks", x["id"], "Aufgabe gelöscht")
 
-    st.markdown("---")
-    st.subheader("💡 Aufgabenvorschläge")
-    linked = rec.get("member") or next((n for n in rank_of if n.lower() == user["username"].lower()), "")
-    can_approve = is_owner or rank_of.get(linked) in TASK_APPROVER_RANKS
-    st.caption("Jeder kann Aufgaben vorschlagen. Übernehmen oder ablehnen dürfen: " + ", ".join(TASK_APPROVER_RANKS) + ".")
-    with st.expander("➕ Aufgabe vorschlagen"):
-        with st.form("add_idea", clear_on_submit=True):
-            it = st.text_input("Vorschlag (kurz und knapp)")
-            idesc = st.text_area("Beschreibung (optional)", height=90)
-            if st.form_submit_button("Vorschlag einreichen", use_container_width=True):
-                if it.strip():
-                    with edit(f"Aufgabenvorschlag „{it.strip()}“") as d:
-                        d["task_ideas"].append({"id": uid(), "title": it.strip(), "description": idesc.strip(),
-                                                "author": user["username"], "date": date.today().isoformat(),
-                                                "status": "Offen", "handled_by": "", "note": ""})
-                    st.rerun()
-                else: st.warning("Bitte einen Titel eingeben.")
-    open_ideas = [i for i in data["task_ideas"] if i["status"] == "Offen"]
-    if not open_ideas: st.info("Keine offenen Vorschläge.")
-    for i in reversed(open_ideas):
-        desc = f"<div style='white-space:pre-wrap;margin-top:8px'>{esc(i['description'])}</div>" if i.get("description") else ""
-        show(f"<strong>{esc(i['title'])}</strong> {chip('Vorschlag', '#3B82F6')}<br>"
-             f"<span class='muted'>von {esc(i['author'])} | {fmt(i['date'])}</span>{desc}")
-        b1, b2, b3, _ = st.columns([2, 2, 2, 4])
-        if can_approve:
-            with b1.popover("✅ Übernehmen"):
-                pr = st.selectbox("Priorität", PRIOS, index=1, key=f"ip{i['id']}")
-                who = st.multiselect("Zuständig", member_names, format_func=mlabel, key=f"iw{i['id']}")
-                if st.button("Als Aufgabe anlegen", key=f"ia{i['id']}"):
-                    with edit(f"Vorschlag „{i['title']}“ übernommen") as d:
-                        d["tasks"].append({"id": uid(), "title": i["title"], "assignee": ", ".join(who) or "Team",
-                                           "priority": pr, "status": "Offen"})
-                        for x in d["task_ideas"]:
-                            if x["id"] == i["id"]: x.update(status="Angenommen", handled_by=user["username"])
-                    st.rerun()
-            with b2.popover("❌ Ablehnen"):
-                nt = st.text_input("Grund (optional)", key=f"in{i['id']}")
-                if st.button("Vorschlag ablehnen", key=f"ir{i['id']}"):
-                    update("task_ideas", i["id"], f"Vorschlag „{i['title']}“ abgelehnt", status="Abgelehnt",
-                           handled_by=user["username"], note=nt.strip())
-        if (can_approve or i["author"] == user["username"]) and b3.button("🗑 Löschen", key=f"id{i['id']}"):
-            remove("task_ideas", i["id"], "Aufgabenvorschlag")
-    handled = [i for i in data["task_ideas"] if i["status"] != "Offen"][-8:]
-    if handled:
-        show("<strong>Zuletzt bearbeitet</strong>" + "".join(
-            f"<div style='margin-top:6px'>{chip(i['status'], '#22C55E' if i['status'] == 'Angenommen' else '#9CA3AF')} {esc(i['title'])} "
-            f"<span class='muted'>– von {esc(i['author'])}, bearbeitet von {esc(i['handled_by'])}"
-            f"{(' · ' + esc(i['note'])) if i.get('note') else ''}</span></div>" for i in reversed(handled)))
 
-# --- PROTOKOLLE ---
+# =====================================================================
+# PROTOKOLLE
+# =====================================================================
 elif key == "protocols":
     st.title("📝 Teamsitzungs-Protokolle")
     if can_write:
@@ -898,11 +1132,22 @@ elif key == "protocols":
                 pc = st.text_area("Inhalt", value="1. Begrüßung:\n\n2. Themen:\n\n3. Beschlüsse:", height=200)
                 if st.form_submit_button("Speichern", use_container_width=True):
                     if pt.strip():
+                        now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
                         with edit(f"Protokoll „{pt.strip()}“") as d:
                             d["protocols"].append({"id": uid(), "title": pt.strip(), "participants": pp,
-                                                   "date": datetime.now().strftime("%d.%m.%Y %H:%M"), "content": pc})
-                        dc_send("protocols", f"📝 Neues Protokoll: {pt.strip()}", 0x3B82F6,
-                                [("Teilnehmer", pp or "-"), ("Erstellt von", user["username"])], pc)
+                                                   "date": now_str, "content": pc})
+                        preview = pc[:900] + ("..." if len(pc) > 900 else "")
+                        send_discord_embed(
+                            "general",
+                            f"📝 Neues Sitzungsprotokoll: {pt.strip()}",
+                            f"```\n{preview}\n```",
+                            color_hex="#A855F7",
+                            fields=[
+                                {"name": "📅 Datum", "value": now_str, "inline": True},
+                                {"name": "👥 Teilnehmer", "value": pp.strip() or "-", "inline": True},
+                            ],
+                            author_name=user["username"]
+                        )
                         st.rerun()
                     else: st.warning("Bitte einen Titel eingeben.")
     for p in reversed(data["protocols"]):
@@ -910,111 +1155,10 @@ elif key == "protocols":
              f"<pre style='white-space:pre-wrap;background:transparent;border:none;color:{t['TEXT_MAIN']}'>{esc(p['content'])}</pre>")
         delete_btn("protocols", p["id"], "Protokoll")
 
-# --- TEAMWÜNSCHE ---
-elif key == "wishes":
-    st.title("💡 Teamwünsche")
-    st.caption("Was soll an dieser Seite besser werden? Reiche Wünsche ein und stimme für Ideen anderer ab.")
-    manage, me = perm_mode == "full", user["username"]
-    with st.expander("➕ Neuen Wunsch einreichen"):
-        with st.form("add_wish", clear_on_submit=True):
-            wt = st.text_input("Titel (kurz und knapp)")
-            wc = st.selectbox("Kategorie", WISH_CATS)
-            wd = st.text_area("Beschreibung (optional)", height=100)
-            if st.form_submit_button("Wunsch einreichen", use_container_width=True):
-                if wt.strip():
-                    with edit(f"Wunsch „{wt.strip()}“ eingereicht") as d:
-                        d["wishes"].append({"id": uid(), "title": wt.strip(), "category": wc, "description": wd.strip(),
-                                            "author": me, "date": date.today().isoformat(), "status": "Neu",
-                                            "votes": [me], "answer": ""})
-                    st.rerun()
-                else: st.warning("Bitte einen Titel eingeben.")
-    f1, f2 = st.columns(2)
-    sf = f1.selectbox("Status", ["Alle", "Offen"] + WISH_STATUS)
-    cf = f2.selectbox("Kategorie ", ["Alle"] + WISH_CATS)
-    ws = [w for w in data["wishes"] if (sf == "Alle" or w["status"] == sf or (sf == "Offen" and w["status"] in WISH_OPEN))
-          and cf in ("Alle", w["category"])]
-    ws.sort(key=lambda w: (w["status"] not in WISH_OPEN, -len(w["votes"])))
-    if not ws: st.info("Noch keine Wünsche vorhanden – sei der Erste! 💡")
-    for w in ws:
-        mine = me in w["votes"]
-        desc = f"<div style='white-space:pre-wrap;margin-top:8px'>{esc(w['description'])}</div>" if w.get("description") else ""
-        ans = (f"<div style='margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)'>"
-               f"<strong>Antwort vom Team:</strong> {esc(w['answer'])}</div>") if w.get("answer") else ""
-        show(f"<div style='display:flex;justify-content:space-between;gap:12px'><div>"
-             f"<strong style='font-size:17px'>{esc(w['title'])}</strong> {chip(w['status'], WISH_COL.get(w['status'], '#9CA3AF'))} "
-             f"{chip(w['category'], '#9CA3AF')}<br><span class='muted'>von {esc(w['author'])} | {fmt(w['date'])}</span></div>"
-             f"<div style='text-align:center;min-width:60px;margin-right:18px'><div class='metric-value' style='font-size:26px!important'>{len(w['votes'])}</div>"
-             f"<div class='muted'>Stimmen</div></div></div>{desc}{ans}")
-        b1, b2, _ = st.columns([2, 2, 6])
-        if b1.button("↩ Stimme zurückziehen" if mine else "👍 Dafür", key=f"vote_{w['id']}"):
-            with edit() as d:
-                for x in d["wishes"]:
-                    if x["id"] == w["id"]:
-                        x["votes"] = [v for v in x["votes"] if v != me] if mine else x["votes"] + [me]
-            st.rerun()
-        if manage or (w["author"] == me and w["status"] == "Neu"):
-            with b2.popover("✏️ Verwalten"):
-                if manage:
-                    ns = st.selectbox("Status", WISH_STATUS, index=WISH_STATUS.index(w["status"]) if w["status"] in WISH_STATUS else 0, key=f"ws{w['id']}")
-                    na = st.text_area("Antwort vom Team", value=w.get("answer", ""), key=f"wa{w['id']}", height=90)
-                    if st.button("💾 Speichern", key=f"wsv{w['id']}"):
-                        update("wishes", w["id"], f"Wunsch „{w['title']}“ → {ns}", status=ns, answer=na.strip())
-                if st.button("🗑 Wunsch löschen", key=f"wdel{w['id']}"): remove("wishes", w["id"], f"Wunsch „{w['title']}“")
 
-# --- DISCORD ---
-elif key == "discord":
-    st.title("🔔 Discord-Anbindung")
-    if not is_owner:
-        st.error("Kein Zugriff.")
-        st.stop()
-    cfg = dc_cfg()
-    st.caption("Webhooks schicken Nachrichten in je einen Channel. Für das automatische Ändern von Discord-Rollen wird zusätzlich ein Bot benötigt.")
-    with st.expander("📖 Einrichtung"):
-        st.markdown("""
-**Webhook:** Channel → Einstellungen → Integrationen → Webhooks → Neuer Webhook → URL kopieren (pro Bereich ein Channel möglich).
-
-**Bot (nur für Rollen):** [Developer Portal](https://discord.com/developers/applications) → Neue Application → *Bot* → Token kopieren.
-Bot mit dem Recht **Rollen verwalten** auf den Server einladen. Seine Rolle muss in der Rollenliste **über** allen Rängen stehen, die er vergeben soll.
-
-**IDs:** In Discord unter Einstellungen → Erweitert den *Entwicklermodus* aktivieren. Dann Rechtsklick auf Server, Rolle oder Person → *ID kopieren*.
-
-Tipp: Den Token kannst du statt hier auch als Umgebungsvariable `DISCORD_BOT_TOKEN` setzen.
-""")
-    with st.form("dc_cfg"):
-        st.subheader("Webhooks")
-        hooks = {k: st.text_input(lbl, value=cfg["webhooks"].get(k, ""), placeholder="https://discord.com/api/webhooks/…") for k, lbl in DC_HOOKS.items()}
-        st.subheader("Bot & Rollen-Sync")
-        sync = st.checkbox("Discord-Rolle bei Rangänderung automatisch anpassen", value=bool(cfg["sync_roles"]))
-        c1, c2 = st.columns(2)
-        gid = c1.text_input("Server-ID", value=cfg["guild_id"])
-        tok = c2.text_input("Bot-Token" + (" (gespeichert, leer lassen = behalten)" if cfg["bot_token"] else ""), type="password")
-        st.subheader("Rang → Discord-Rollen-ID")
-        rc = st.columns(3)
-        roles = {r: rc[i % 3].text_input(r, value=cfg["roles"].get(r, ""), key=f"dcr_{i}") for i, r in enumerate(RANKS)}
-        if st.form_submit_button("💾 Speichern", use_container_width=True):
-            hooks = {k: v.strip() for k, v in hooks.items()}
-            roles = {k: v.strip() for k, v in roles.items()}
-            if any(v and not DC_HOOK_RE.match(v) for v in hooks.values()):
-                st.error("Ungültige Webhook-URL. Sie muss eine discord.com-Webhook-Adresse sein.")
-            elif any(v and not v.isdigit() for v in [gid.strip(), *roles.values()]):
-                st.error("Server- und Rollen-IDs bestehen nur aus Ziffern.")
-            else:
-                cfg.update(webhooks=hooks, sync_roles=sync, guild_id=gid.strip(), roles=roles)
-                if tok.strip(): cfg["bot_token"] = tok.strip()
-                dc_save(cfg)
-                st.success("Gespeichert.")
-    st.subheader("🧪 Testnachricht senden")
-    for col, (k, lbl) in zip(st.columns(4), DC_HOOKS.items()):
-        if col.button(lbl, key=f"dct_{k}", use_container_width=True):
-            r = dc_post(k, dc_embed("🧪 Testnachricht", 0x3B82F6, [("Von", user["username"])]), cfg, _dc_log())
-            if r is None: st.warning(f"Für „{lbl}“ ist noch keine Webhook-URL gespeichert.")
-            elif r[0]: st.success(f"„{lbl}“: Nachricht gesendet.")
-            else: st.error(f"„{lbl}“: {DC_ERR.get(r[1], 'Fehler')} ({r[1]})")
-    st.subheader("📜 Letzte Sendungen")
-    show("".join(f"<div class='muted'>{esc(t)} – <strong>{esc(w)}</strong>: {esc(r)}</div>" for t, w, r in reversed(_dc_log()[-15:]))
-         or "<span class='muted'>Noch nichts gesendet.</span>")
-
-# --- NOTIZEN ---
+# =====================================================================
+# NOTIZEN
+# =====================================================================
 elif key == "notes":
     st.title("📌 Notizen")
     val = st.text_area("Notizblock", value=data["notes"], height=350, disabled=not can_write)
@@ -1022,7 +1166,10 @@ elif key == "notes":
         with edit("Notizen aktualisiert") as d: d["notes"] = val
         st.success("Gespeichert!")
 
-# --- EINSTELLUNGEN ---
+
+# =====================================================================
+# EINSTELLUNGEN & DISCORD-WEBHOOK-KONFIGURATION
+# =====================================================================
 elif key == "settings":
     st.title("⚙️ Einstellungen & Design")
     names = list(THEMES)
@@ -1030,6 +1177,7 @@ elif key == "settings":
     if st.button("🎨 Theme anwenden"):
         with edit() as d: d["settings"].setdefault("themes", {})[user["username"]] = sel
         st.rerun()
+
     st.markdown("---")
     st.subheader("🔐 Passwort ändern")
     with st.form("pw"):
@@ -1041,7 +1189,46 @@ elif key == "settings":
                 st.success("Passwort geändert.")
             else: st.error("Aktuelles Passwort falsch oder neues Passwort zu kurz (min. 3 Zeichen).")
 
-# --- BENUTZER & RECHTE ---
+    if is_admin:
+        st.markdown("---")
+        st.subheader("🤖 Discord-Anbindung (Channel-Webhooks)")
+        st.caption("Trage hier die Discord-Webhook-URLs für die jeweiligen Kanäle ein. Wenn ein Feld leer bleibt, wird automatisch der „Allgemein“-Webhook genutzt (falls vorhanden).")
+        cur_wh = data.get("settings", {}).get("webhooks", {})
+        with st.form("discord_webhooks_form"):
+            new_wh = {}
+            for wh_key, wh_label in WEBHOOK_CHANNELS:
+                new_wh[wh_key] = st.text_input(
+                    wh_label,
+                    value=cur_wh.get(wh_key, ""),
+                    placeholder="https://discord.com/api/webhooks/...",
+                    key=f"wh_input_{wh_key}"
+                )
+            col_wh1, col_wh2 = st.columns([2, 1])
+            save_wh = col_wh1.form_submit_button("💾 Discord-Webhooks speichern", use_container_width=True)
+            test_wh = col_wh2.form_submit_button("🔔 Test-Nachricht senden", use_container_width=True)
+
+            if save_wh or test_wh:
+                with edit("Discord-Webhooks aktualisiert") as d:
+                    d["settings"]["webhooks"] = {k: v.strip() for k, v in new_wh.items()}
+                if test_wh:
+                    for wh_key, wh_label in WEBHOOK_CHANNELS:
+                        if new_wh[wh_key].strip():
+                            send_discord_embed(
+                                wh_key,
+                                "✅ Discord-Verbindung erfolgreich getestet!",
+                                f"Dieser Channel (**{wh_label}**) ist ab sofort aktiv mit der **Wolf Life Team-Suite** verbunden.",
+                                color_hex="#22C55E",
+                                fields=[{"name": "📡 Status", "value": "Online & Bereit", "inline": True}],
+                                author_name=user["username"]
+                            )
+                    st.success("Webhooks gespeichert & Test-Embeds an alle eingetragenen Channels gesendet!")
+                else:
+                    st.success("Discord-Webhooks erfolgreich gespeichert!")
+
+
+# =====================================================================
+# BENUTZER & RECHTE
+# =====================================================================
 elif key == "accounts":
     st.title("🔑 Benutzer & Rechte")
     if not is_admin:
@@ -1052,22 +1239,18 @@ elif key == "accounts":
             un = st.text_input("Benutzername")
             up = st.text_input("Start-Passwort (min. 3 Zeichen)", type="password")
             ua = st.checkbox("Administrator (voller Zugriff)")
-            uo = st.checkbox("Alpha-Owner (Zugriff auf den Discord-Reiter)") if is_owner else False
             cols = st.columns(3)
             perms = {k: cols[i % 3].selectbox(l, PERM_OPTS, format_func=lambda x: PERM_LABELS[x], index=1, key=f"p_{k}")
-                     for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings", "discord")}
+                     for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings")}
             if st.form_submit_button("Anlegen", use_container_width=True):
                 if len(un.strip()) < 3 or len(up) < 3: st.error("Benutzername min. 3, Passwort min. 3 Zeichen.")
                 elif un.strip().lower() in [u["username"].lower() for u in data["users"]]: st.error("Benutzername existiert bereits.")
                 else:
                     with edit(f"Benutzer {un.strip()} angelegt") as d:
-                        d["users"].append({"username": un.strip(), "pw_hash": hash_pw(up), "is_admin": ua or uo, "is_owner": uo, "permissions": perms})
+                        d["users"].append({"username": un.strip(), "pw_hash": hash_pw(up), "is_admin": ua, "permissions": perms})
                     st.rerun()
     for u in data["users"]:
-        with st.expander(f"{u['username']} {'(Alpha-Owner)' if u.get('is_owner') else '(Administrator)' if u.get('is_admin') else ''}"):
-            if u.get("is_owner") and not is_owner:
-                st.info("🔒 Alpha-Owner-Konto: kann nur von einem Alpha-Owner verwaltet werden.")
-                continue
+        with st.expander(f"{u['username']} {'(Administrator)' if u.get('is_admin') else ''}"):
             new_uname = st.text_input("Benutzername ändern", value=u["username"], key=f"nu_{u['username']}")
             if st.button("✏️ Namen speichern", key=f"su_{u['username']}"):
                 new_clean = new_uname.strip()
@@ -1089,26 +1272,18 @@ elif key == "accounts":
             is_self = u["username"] == user["username"]
             adm = st.checkbox("Administrator (voller Zugriff)", value=bool(u.get("is_admin")),
                               disabled=is_self, key=f"adm_{u['username']}")
-            ow = (st.checkbox("Alpha-Owner (übergeordnet, einziger Zugriff auf den Discord-Reiter)", value=bool(u.get("is_owner")),
-                              disabled=is_self, key=f"own_{u['username']}") if is_owner else bool(u.get("is_owner")))
-            lm_opts = ["–"] + member_names
-            lm = st.selectbox("Verknüpftes Teammitglied (für rangabhängige Rechte)", lm_opts,
-                              index=lm_opts.index(u["member"]) if u.get("member") in lm_opts else 0,
-                              format_func=lambda n: n if n == "–" else mlabel(n), key=f"lm_{u['username']}")
             cur = u.get("permissions") or {}
             pc = st.columns(3)
             newp = {k: pc[i % 3].selectbox(l, PERM_OPTS, format_func=lambda x: PERM_LABELS[x],
-                                           index=PERM_OPTS.index(cur.get(k, DEF_PERM.get(k, "hidden"))) if cur.get(k, DEF_PERM.get(k, "hidden")) in PERM_OPTS else 2,
+                                           index=PERM_OPTS.index(cur.get(k, "hidden")) if cur.get(k, "hidden") in PERM_OPTS else 2,
                                            key=f"ep_{u['username']}_{k}")
-                    for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings", "discord")}
+                    for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings")}
             if st.button("💾 Rechte speichern", key=f"sp_{u['username']}"):
                 with edit(f"Rechte von {u['username']} geändert") as d:
                     for x in d["users"]:
                         if x["username"] == u["username"]:
                             x["permissions"] = newp
-                            x["is_admin"] = adm or ow
-                            x["member"] = "" if lm == "–" else lm
-                            if is_owner: x["is_owner"] = ow
+                            x["is_admin"] = adm
                 st.success("Rechte gespeichert.")
             st.markdown("---")
             np_ = st.text_input("Neues Passwort setzen (min. 3 Zeichen)", type="password", key=f"np_{u['username']}")
