@@ -1137,7 +1137,6 @@ elif key == "dashboard":
     st.title("📊 Dashboard & Live-Statistiken")
     st.caption(f"Willkommen zurück, {user['username']}! Heute ist der {date.today().strftime('%d.%m.%Y')}.")
     open_apps = sum(a.get("status") not in ("Angenommen", "Abgelehnt") for a in data["applicants"])
-    # HIER WAR DER FEHLER: x.get("status") statt x.get("status"]
     open_tasks = sum(x.get("status") != "Erledigt" for x in data["tasks"])
     stats = [("Teammitglieder", len(data["members"])), ("Offene Bewerbungen", open_apps),
              ("Verwarnungen", len(data["warnings"])), ("Offene Aufgaben", open_tasks)]
@@ -1584,7 +1583,8 @@ elif key == "applicants":
                         else:
                             st.warning("Bitte einen Text eingeben.")
 
-                existing_fbs = [f for f in data.get("feedback", []) if f.get("applicant_name"] == ap["name"]]
+                # HIER WAR DER FEHLER: f.get("applicant_name") statt f.get("applicant_name"]
+                existing_fbs = [f for f in data.get("feedback", []) if f.get("applicant_name") == ap["name"]]
                 if existing_fbs:
                     st.markdown("**Bisheriges Team-Feedback:**")
                     for fb in existing_fbs:
@@ -1724,7 +1724,7 @@ elif key == "calendar":
     for i in range(7):
         day_dt = monday + timedelta(days=i)
         is_today = day_dt == today
-        day_shifts = sorted([x for x in data["schedules"] if x.get("date") == day_dt.isoformat()], key=lambda x: x.get("time_from", ""))
+        day_shifts = sorted([x for x in data["schedules"] if x.get("date"] == day_dt.isoformat()], key=lambda x: x.get("time_from", "")) if False else sorted([x for x in data["schedules"] if x.get("date") == day_dt.isoformat()], key=lambda x: x.get("time_from", ""))
         day_abs = [a for a in data["absences"] if (parse_d(a.get("from_date")) or date.max) <= day_dt <= (parse_d(a.get("to_date")) or date.min)]
         if not (day_shifts or day_abs or is_today): continue
         label = f"{weekdays_de[i]}, {day_dt.strftime('%d.%m.%Y')}" + ("  🟢 (HEUTE)" if is_today else "")
@@ -2369,7 +2369,7 @@ elif key == "settings":
                 st.info("Noch keine Kategorien angelegt.")
             else:
                 for c_obj in cats:
-                    assigned_cnt = sum(1 for r in custom_ranks if r.get("category_id") == c_obj["id"])
+                    assigned_cnt = sum(1 for r in custom_ranks if r.get("category_id"] == c_obj["id"]) if False else sum(1 for r in custom_ranks if r.get("category_id") == c_obj["id"])
                     ht_chip = chip("High-Team Bereich", "#A855F7") if c_obj.get("is_high_team") else chip("Standard-Team Bereich", "#3B82F6")
                     dc_txt = f" · Discord Überrollen-ID: `{c_obj['discord_role_id']}`" if c_obj.get("discord_role_id") else " · Keine Discord-ID"
 
