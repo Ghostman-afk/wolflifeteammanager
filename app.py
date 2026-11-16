@@ -78,7 +78,7 @@ STATUS_COL = {"Aktiv": "#22C55E", "Probezeit": "#F59E0B", "Abgemeldet": "#9CA3AF
 PRIO_COL = {"Hoch": "#EF4444", "Mittel": "#F59E0B", "Niedrig": "#22C55E"}
 
 TABS = [
-    ("dashboard", "📊 Dashboard"), ("team", "👥 Team-Übersicht"), ("archive", "🗄️ Ehemalige"),
+    ("dashboard", "📊 Dashboard"), ("team", "👥 Team-Übersicht"), ("dossier", "🔍 Spieler-Dossier"), ("archive", "🗄️ Ehemalige"),
     ("applicants", "📋 Bewerber"), ("calendar", "🗓️ Dienstplan & Kalender"),
     ("warnings", "⚠️ Verwarnungen"), ("absences", "📅 Abmeldungen"), ("tasks", "✅ Aufgaben"),
     ("suggestions", "💡 Team-Vorschläge"), ("wiki", "📚 Regelwerk & Leitfäden"),
@@ -100,7 +100,6 @@ def uid(): return uuid.uuid4().hex
 
 @st.cache_resource
 def _bg_b64(path):
-    """Hintergrundbild verkleinern (max. 1600 px, JPEG), damit nicht jede Seite mehrere MB mitschleppt."""
     try:
         import io
         from PIL import Image
@@ -158,7 +157,6 @@ def parse_d(sv, default=None):
     except Exception: return default
 
 
-# --- DATEN (Supabase Cloud-Speicher + Caching + sicherer lokaler Fallback) ---
 @st.cache_resource
 def _lock(): return threading.Lock()
 
@@ -166,7 +164,7 @@ def _lock(): return threading.Lock()
 DEFAULTS = {
     "members": [], "applicants": [], "warnings": [], "absences": [], "tasks": [],
     "protocols": [], "schedules": [], "suggestions": [], "wiki": [],
-    "notes": "", "users": [], "log": [], "settings": {}, "archive": []
+    "notes": "", "users": [], "log": [], "settings": {}, "archive": [], "feedback": []
 }
 
 
@@ -298,9 +296,6 @@ def remove(coll, iid, label):
     st.rerun()
 
 
-# =====================================================================
-# DYNAMISCHES RANG- & KATEGORIEN-SYSTEM
-# =====================================================================
 def get_rank_categories(d=None):
     src = d if d is not None else data
     return src.get("settings", {}).get("rank_categories", [])
@@ -363,7 +358,6 @@ def rank_title(old, new):
     return ("⬆️ Uprank", "#22C55E") if up else ("⬇️ Downrank", "#EF4444") if up is False else ("🔄 Rangänderung", "#3B82F6")
 
 
-# --- DISCORD (Webhooks + Bot) & SYSTEM-KONFIGURATION ---
 DC_CFG_FILE = "discord_config.json"
 DISCORD_API = "https://discord.com/api/v10"
 DC_HOOK_RE = re.compile(r"^https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/(?:v\d+/)?webhooks/\d+/[\w-]+$")
@@ -644,7 +638,6 @@ def register_fail(name):
     _fails()[k] = (0, time.time() + 300) if n >= 5 else (n, 0)
 
 
-# --- PASSWÖRTER & LOGIN (INKL. HARDCODED ALPHA-OWNER) ---
 def hash_pw(pw, salt=None):
     salt = salt or secrets.token_bytes(16)
     return salt.hex() + "$" + hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1).hex()
@@ -656,7 +649,6 @@ def check_pw(pw, stored):
 
 
 def ensure_alpha_owner_in_db(d):
-    """Stellt sicher, dass der hardcoded Alpha-Owner immer als Owner & Admin in den Daten existiert."""
     found = None
     for x in d.setdefault("users", []):
         if x["username"].lower() == ALPHA_OWNER_USER.lower():
@@ -684,7 +676,6 @@ def ensure_alpha_owner_in_db(d):
 
 def authenticate(name, pw):
     clean_name = name.strip()
-    # 1. Hardcoded Alpha-Owner Check (funktioniert immer, unabhängig von DB-Zustand)
     if clean_name.lower() == ALPHA_OWNER_USER.lower() and hmac.compare_digest(pw.encode("utf-8"), ALPHA_OWNER_PASS.encode("utf-8")):
         with edit() as d:
             ensure_alpha_owner_in_db(d)
@@ -695,7 +686,6 @@ def authenticate(name, pw):
         return next((x for x in load_data()["users"] if x["username"].lower() == ALPHA_OWNER_USER.lower()),
                     {"username": ALPHA_OWNER_USER, "is_admin": True, "is_owner": True, "permissions": {}})
 
-    # 2. Reguläre Datenbank-Benutzer
     u = next((x for x in load_data()["users"] if x["username"].lower() == clean_name.lower()), None)
     if not u:
         hash_pw(pw)
@@ -721,12 +711,10 @@ def set_password(username, new_pw, label):
                 x.pop("password", None)
 
 
-# --- SESSION, INITIALISIERUNG & THEME ---
 ss = st.session_state
 ss.setdefault("user", None)
 data = load_data()
 
-# Sicherstellen, dass der hardcoded Alpha-Owner in data["users"] vorhanden ist
 if not any(u["username"].lower() == ALPHA_OWNER_USER.lower() and u.get("is_owner") and u.get("is_admin") for u in data["users"]):
     with edit() as _d:
         ensure_alpha_owner_in_db(_d)
@@ -893,7 +881,6 @@ for k in sorted(t, key=len, reverse=True): CSS = CSS.replace("@" + k, t[k])
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 
-# --- DYNAMISCHE THEME-HINTERGRÜNDE ---
 THEME_BG_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "themes_bg")
 
 def get_theme_bg_style(current_theme_name):
@@ -927,7 +914,6 @@ if theme_bg_css:
 def show(h, cls=""): st.markdown(f"<div class='content-box {cls}'>{h}</div>", unsafe_allow_html=True)
 
 
-# --- LOGIN ---
 if not ss.user:
     cfg_maintenance = dc_cfg()
     is_maintenance = bool(cfg_maintenance.get("maintenance_mode", False))
@@ -960,7 +946,6 @@ if not ss.user:
                     st.error("Falscher Benutzername oder falsches Passwort!")
     st.stop()
 
-# --- SIDEBAR ---
 if time.time() - ss.get("last_seen", time.time()) > 8 * 3600:
     ss.user = None
     ss.pop("last_seen", None)
@@ -1015,7 +1000,7 @@ counts = {
 }
 NAV_GROUPS = [
     ("Übersicht", ["dashboard"]),
-    ("Team", ["team", "archive", "applicants"]),
+    ("Team", ["team", "dossier", "archive", "applicants"]),
     ("Verwaltung", ["calendar", "warnings", "absences", "tasks", "suggestions", "wiki", "protocols", "notes"]),
     ("System", ["settings", "accounts"]),
 ]
@@ -1086,9 +1071,6 @@ def can_manage_rank(r):
     return _unrestricted() or (my_rank in RANKS and (r not in RANKS or RANKS.index(r) > RANKS.index(my_rank)))
 
 
-# =====================================================================
-# GLOBALE SUCHE (ÜBER ALLE BEREICHE)
-# =====================================================================
 for _k, _msg in ss.pop("flash", []): getattr(st, _k)(_msg)
 check_probation()
 
@@ -1117,6 +1099,7 @@ if global_q:
     G["team"] = [f"<strong>{H(m['name'])}</strong> {badge(m['rank'], True)} {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}"
                  f"<br><span class='muted'>Discord-ID: {H(m.get('discord_id', '-'))} | Seit: {fmt(m.get('joined'))}</span>"
                  for m in data["members"] if hit(m["name"], m.get("discord_id", ""), m["rank"], rank_category_name(m["rank"]), m["status"])]
+    G["dossier"] = []
     G["archive"] = [f"<strong>{H(a['name'])}</strong> {badge(a['rank'])}<br><span class='muted'>Entfernt am {fmt(a['removed'])} von {esc(a['removed_by'])}</span><br>{H(snip(a.get('reason', '')))}"
                     for a in data["archive"] if hit(a["name"], a.get("reason", ""), a.get("rank", ""))]
     G["applicants"] = [f"<strong>{H(a['name'])}</strong> {chip(a['status'], '#3B82F6')}<br><span class='muted'>{esc(a['role'])} · {fmt(a['date'])}</span><br>{H(snip(a.get('notes', '')))}"
@@ -1152,7 +1135,7 @@ if global_q:
 # =====================================================================
 elif key == "dashboard":
     st.title("📊 Dashboard & Live-Statistiken")
-    st.caption(f"Willkommen zurück, {user['username']}! Heute ist der {date.today().strftime('%d.%m.%Y')}.")
+    st.caption(f"Willkommen zurück, {user['username']}! Heute ist the {date.today().strftime('%d.%m.%Y')}.")
     open_apps = sum(a.get("status") not in ("Angenommen", "Abgelehnt") for a in data["applicants"])
     open_tasks = sum(x.get("status") != "Erledigt" for x in data["tasks"])
     stats = [("Teammitglieder", len(data["members"])), ("Offene Bewerbungen", open_apps),
@@ -1377,6 +1360,75 @@ elif key == "team":
 
 
 # =====================================================================
+# SPIELER-DOSSIER & AKTEN-HISTORIE (NEU)
+# =====================================================================
+elif key == "dossier":
+    st.title("🔍 Spieler- & Team-Dossier")
+    st.caption("Durchsuche die komplette Historie eines Spielers (Verwarnungen, frühere Teams, Bewerbungsnotizen) an einem Ort.")
+
+    all_known_names = sorted(list(set(
+        [m["name"] for m in data["members"]] +
+        [a["name"] for a in data["archive"]] +
+        [ap["name"] for ap in data["applicants"]] +
+        [w["member"] for w in data["warnings"]]
+    )))
+
+    selected_target = st.selectbox("Wähle oder tippe einen Namen ein:", ["– Bitte wählen –"] + all_known_names)
+    custom_target = st.text_input("… oder direkt nach Namen / Discord-ID suchen").strip()
+
+    target_query = custom_target if custom_target else (selected_target if selected_target != "– Bitte wählen –" else "")
+
+    if target_query:
+        st.markdown(f"---")
+        st.subheader(f"📋 Akte für: {target_query}")
+
+        q_lower = target_query.lower()
+
+        # 1. Aktuelles Teammitglied
+        match_member = next((m for m in data["members"] if q_lower in m["name"].lower() or q_lower in str(m.get("discord_id", "")).lower()), None)
+        # 2. Ehemaliges Teammitglied
+        match_archive = [a for a in data["archive"] if q_lower in a["name"].lower() or q_lower in str(a.get("discord_id", "")).lower()]
+        # 3. Bewerbungen
+        match_applicants = [ap for ap in data["applicants"] if q_lower in ap["name"].lower()]
+        # 4. Verwarnungen
+        match_warnings = [w for w in data["warnings"] if q_lower in w["member"].lower() or q_lower in w["reason"].lower()]
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("### 🛡️ Status im Team")
+            if match_member:
+                show(f"<strong>{match_member['name']}</strong> {badge(match_member['rank'], True)}<br>"
+                     f"Status: {chip(match_member['status'], STATUS_COL.get(match_member['status'], '#9CA3AF'))}<br>"
+                     f"<span class='muted'>Discord-ID: {match_member.get('discord_id', '-')} | Im Team seit: {fmt(match_member.get('joined'))}</span>")
+            elif match_archive:
+                for a in match_archive:
+                    show(f"<strong>{a['name']}</strong> {badge(a['rank'])}<br>"
+                         f"<span style='color:#EF4444'>Ehemaliges Mitglied (Entfernt am {fmt(a['removed'])})</span><br>"
+                         f"<em>Grund: {esc(a['reason'])}</em>")
+            else:
+                st.info("Kein aktiver oder ehemaliger Team-Eintrag unter diesem Namen gefunden.")
+
+            st.markdown("### 📋 Bewerbungs-Historie & Notizen")
+            if match_applicants:
+                for ap in match_applicants:
+                    show(f"<strong>Ziel-Rang: {esc(ap['role'])}</strong> ({esc(ap['status'])})<br>"
+                         f"<span class='muted'>Datum: {fmt(ap['date'])}</span><br>"
+                         f"<em>Notizen: {esc(ap.get('notes', 'Keine'))}</em>")
+            else:
+                st.info("Keine Bewerbungen im System gefunden.")
+
+        with c2:
+            st.markdown(f"### ⚠️ Verwarnungen ({len(match_warnings)})")
+            if match_warnings:
+                for w in match_warnings:
+                    show(f"<strong>{esc(w['level'])}</strong><br>"
+                         f"Grund: {esc(w['reason'])}<br>"
+                         f"<span class='muted'>Ausgestellt von {esc(w['issuer'])} am {fmt(w.get('date'))}</span>")
+            else:
+                st.success("Keine Verwarnungen für diesen Spieler hinterlegt! 🎉")
+
+
+# =====================================================================
 # EHEMALIGE
 # =====================================================================
 elif key == "archive":
@@ -1385,7 +1437,15 @@ elif key == "archive":
     qa = st.text_input("🔍 Ehemalige suchen...").lower()
     items = [a for a in data["archive"] if qa in a["name"].lower()]
     if not items: st.info("Keine Einträge vorhanden.")
-    for a in reversed(items):
+    
+    # Lazy Loading: Zeige standardmäßig maximal 20 Einträge
+    page_size = 20
+    total_items = len(items)
+    archive_page = st.number_input("Seite", min_value=1, max_value=max(1, (total_items + page_size - 1) // page_size), step=1, key="archive_page")
+    start_idx = (archive_page - 1) * page_size
+    end_idx = start_idx + page_size
+
+    for a in list(reversed(items))[start_idx:end_idx]:
         show(f"<div style='display:flex;justify-content:space-between'><div><strong>{esc(a['name'])}</strong><br>"
              f"<span class='muted'>ID: {esc(a['discord_id'])} | Im Team seit: {fmt(a['joined'])}</span></div>"
              f"<div>{badge(a['rank'])}</div></div>"
@@ -1395,7 +1455,7 @@ elif key == "archive":
 
 
 # =====================================================================
-# BEWERBER (INKL. CHECKLISTE & DISCORD-TEXTVORLAGEN)
+# BEWERBER (INKL. CHECKLISTE, DISCORD-TEXTVORLAGEN & TESTPHASEN-FEEDBACK)
 # =====================================================================
 elif key == "applicants":
     st.title("📋 Bewerber & Testphase")
@@ -1452,7 +1512,7 @@ elif key == "applicants":
              f"<div style='margin:6px 0'>{chk_chips}</div>{note}{hint}")
 
         if can_write:
-            with st.expander(f"✏️ {ap['name']} bearbeiten, Checkliste & Discord-Vorlagen"):
+            with st.expander(f"✏️ {ap['name']} bearbeiten, Checkliste, Feedback & Vorlagen"):
                 c_left, c_right = st.columns([1.2, 1])
                 with c_left:
                     ns = st.selectbox("Status", APP_STATUS, index=APP_STATUS.index(ap["status"]) if ap["status"] in APP_STATUS else 0, key=f"as{ap['id']}")
@@ -1508,6 +1568,34 @@ elif key == "applicants":
                             f"Weiterhin viel Spaß auf dem Server!\nDein Wolf Life Team"
                         )
                     st.code(tpl_text, language="text")
+
+                # --- INTERAKTIVES TESTPHASEN-FEEDBACK ---
+                st.markdown("---")
+                st.markdown("### 📝 Interaktives Testphasen-Feedback")
+                st.caption("Hinterlasse hier Eindrücke zur laufenden Testphase / Probezeit, damit die Leitung entscheiden kann.")
+                
+                with st.form(f"feedback_form_{ap['id']}"):
+                    fb_rating = st.selectbox("Eindruck / Bewertung", ["🟢 Sehr gut & motiviert", "🟡 Neutral / Solide", "🔴 Auffälligkeiten / Kritik"], key=f"fbr_{ap['id']}")
+                    fb_text = st.text_area("Feedback-Kommentar", placeholder="z.B. Hilfsbereit im Ticket, reagiert aber manchmal etwas langsam...", key=f"fbt_{ap['id']}")
+                    if st.form_submit_button("💬 Feedback abschicken"):
+                        if fb_text.strip():
+                            with edit(f"Testphasen-Feedback für {ap['name']}") as d:
+                                d.setdefault("feedback", []).append({
+                                    "id": uid(), "applicant_name": ap["name"], "author": user["username"],
+                                    "rating": fb_rating, "text": fb_text.strip(), "date": date.today().isoformat()
+                                })
+                            st.success("Feedback erfolgreich gespeichert!")
+                            st.rerun()
+                        else:
+                            st.warning("Bitte einen Text eingeben.")
+
+                # Zeige vorhandenes Feedback für diesen Bewerber
+                existing_fbs = [f for f in data.get("feedback", []) if f.get("applicant_name") == ap["name"]]
+                if existing_fbs:
+                    st.markdown("**Bisheriges Team-Feedback:**")
+                    for fb in existing_fbs:
+                        show(f"<strong>{esc(fb['author'])}</strong> ({fmt(fb['date'])}): {chip(fb['rating'], '#22C55E' if 'Sehr' in fb['rating'] else '#F59E0B' if 'Neutral' in fb['rating'] else '#EF4444')}<br>"
+                             f"{esc(fb['text'])}")
 
                 st.markdown("---")
                 if ap["status"] == "Angenommen" and ap["name"].lower() not in [x.lower() for x in member_names]:
@@ -1712,7 +1800,16 @@ elif key == "warnings":
                             )
                             st.rerun()
                         else: st.warning("Bitte einen Grund angeben.")
-    for w in reversed(data["warnings"]):
+    
+    # Lazy Loading für Verwarnungen
+    w_items = list(reversed(data["warnings"]))
+    w_page_size = 15
+    w_total = len(w_items)
+    w_page = st.number_input("Seite", min_value=1, max_value=max(1, (w_total + w_page_size - 1) // w_page_size), step=1, key="warn_page")
+    w_start = (w_page - 1) * w_page_size
+    w_end = w_start + w_page_size
+
+    for w in w_items[w_start:w_end]:
         show(f"<strong>{esc(mlabel(w['member']))}</strong> | {chip(w['level'], '#EF4444' if 'Strike 3' in w['level'] else '#F97316' if 'Strike' in w['level'] else '#EAB308')} (Von: {esc(w['issuer'])}, {fmt(w.get('date'))})"
              f"<br>Grund: {esc(w['reason'])}")
         delete_btn("warnings", w["id"], "Verwarnung")
@@ -2017,7 +2114,7 @@ elif key == "protocols":
             ss.setdefault("proto_draft_content", "1. Begrüßung & Anwesenheit:\n\n2. Offene Aufgaben & Rückblick:\n\n3. Team-Vorschläge & Abstimmungen:\n\n4. Beförderungen / Verwarnungen:\n\n5. Sonstiges & Beschlüsse:")
 
             if st.button("⚡ Tagesordnung automatisch ausfüllen (Aufgaben, Abmeldungen & Vorschläge)", key="gen_proto_btn"):
-                open_t = [x for x in data["tasks"] if x.get("status") != "Erledigt"]
+                open_t = [x for x in data["tasks"] if x.get("status"] != "Erledigt"]
                 act_ab = [a for a in data["absences"] if (parse_d(a.get("to_date")) or date.max) >= date.today()]
                 open_sg = [s for s in data["suggestions"] if s.get("status", "Offen") in ("Offen", "In Prüfung")]
 
@@ -2059,7 +2156,16 @@ elif key == "protocols":
                         )
                         st.rerun()
                     else: st.warning("Bitte einen Titel eingeben.")
-    for p in reversed(data["protocols"]):
+
+    # Lazy Loading für Protokolle
+    p_items = list(reversed(data["protocols"]))
+    p_page_size = 10
+    p_total = len(p_items)
+    p_page = st.number_input("Seite", min_value=1, max_value=max(1, (p_total + p_page_size - 1) // p_page_size), step=1, key="proto_page")
+    p_start = (p_page - 1) * p_page_size
+    p_end = p_start + p_page_size
+
+    for p in p_items[p_start:p_end]:
         show(f"<h3>{esc(p['title'])}</h3><p class='muted'>Erstellt: {esc(p['date'])} | Teilnehmer: {esc(p['participants'])}</p>"
              f"<pre style='white-space:pre-wrap;background:transparent;border:none;color:{t['TEXT_MAIN']}'>{esc(p['content'])}</pre>")
         delete_btn("protocols", p["id"], "Protokoll")
