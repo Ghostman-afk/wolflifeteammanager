@@ -1724,7 +1724,7 @@ elif key == "calendar":
     for i in range(7):
         day_dt = monday + timedelta(days=i)
         is_today = day_dt == today
-        day_shifts = sorted([x for x in data["schedules"] if x.get("date"] == day_dt.isoformat()], key=lambda x: x.get("time_from", "")) if False else sorted([x for x in data["schedules"] if x.get("date") == day_dt.isoformat()], key=lambda x: x.get("time_from", ""))
+        day_shifts = sorted([x for x in data["schedules"] if x.get("date") == day_dt.isoformat()], key=lambda x: x.get("time_from", ""))
         day_abs = [a for a in data["absences"] if (parse_d(a.get("from_date")) or date.max) <= day_dt <= (parse_d(a.get("to_date")) or date.min)]
         if not (day_shifts or day_abs or is_today): continue
         label = f"{weekdays_de[i]}, {day_dt.strftime('%d.%m.%Y')}" + ("  🟢 (HEUTE)" if is_today else "")
