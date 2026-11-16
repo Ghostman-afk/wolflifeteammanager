@@ -52,17 +52,8 @@ THEME_BG_MAP = {
     "15. Hacker Acid (Limette-Giftgrün)": "theme_15_hacker_acid.jpg",
 }
 
-RANKS = [
-    "Owner", "Projektleitung", "Developer", "stellvertretende Projektleitung",
-    "Teamleitung", "stellvertretende Teamleitung",
-    "Administrator", "Test-Administrator",
-    "Moderator 3", "Moderator 2", "Moderator 1", "Test-Moderator",
-    "Supporter 3", "Supporter 2", "Supporter 1", "Test-Supporter",
-]
 MEMBER_STATUS = ["Aktiv", "Probezeit", "Abgemeldet"]
 APP_STATUS = ["Bewerbung eingegangen", "Im Testgespräch", "Testphase läuft", "Angenommen", "Abgelehnt"]
-APP_ROLES = {"Supporter (Bewerbung)": "Test-Supporter", "Moderator (Bewerbung)": "Test-Moderator",
-             "Administrator (Bewerbung)": "Test-Administrator"}
 PRIOS = ["Hoch", "Mittel", "Niedrig"]
 SHIFT_TYPES = ["Support-Dienst", "Ticket-Schicht", "Ingame-Präsenz", "Teamsitzung", "Einweisung / Training", "Server-Event"]
 SHIFT_COL = {"Support-Dienst": "#3B82F6", "Ticket-Schicht": "#06B6D4", "Ingame-Präsenz": "#22C55E",
@@ -88,16 +79,6 @@ WEBHOOK_CHANNELS = [
     ("team", "👥 Team- & Kader-Channel"),
     ("general", "📢 Allgemein (Aufgaben, Protokolle & Dienstplan)"),
 ]
-
-
-def rank_color(r):
-    if r == "Owner": return "#A855F7"
-    if r == "Developer": return "#FFFFFF"
-    if "Projektleitung" in r: return "#FF69B4"
-    if "Teamleitung" in r: return "#FF7B00"
-    if "Administrator" in r: return "#FF2A2A"
-    if "Moderator" in r: return "#3B82F6"
-    return "#EAB308"
 
 
 def uid(): return uuid.uuid4().hex
@@ -149,12 +130,6 @@ def chip(text, color):
     return f"<span class='chip' style='color:{color};border-color:{color}'>{esc(text)}</span>"
 
 
-def badge(r):
-    c = rank_color(r)
-    return (f"<span class='rank-badge' style='color:{c};border:1px solid {c};border-radius:999px;padding:2px 10px;"
-            f"font-weight:bold;font-size:13px'>{'👑 ' if r == 'Owner' else ''}{esc(r)}</span>")
-
-
 def fmt(s):
     try: return date.fromisoformat(s).strftime("%d.%m.%Y")
     except Exception: return s or "-"
@@ -169,62 +144,15 @@ def parse_d(sv, default=None):
     except Exception: return default
 
 
-def prob_days(): return int(data["settings"].get("probation_days", 14))
-
-
-def prob_start(m): return parse_d(m.get("probation_start") or m.get("joined"), date.today())
-
-
-def prob_end(m): return parse_d(m.get("probation_end")) or prob_start(m) + timedelta(days=prob_days())
-
-
-def days_left(m): return (prob_end(m) - date.today()).days
-
-
-def probation_info(m):
-    s0, e0, left = prob_start(m), prob_end(m), days_left(m)
-    total, passed = max((e0 - s0).days, 1), max(0, (date.today() - s0).days)
-    pct = min(100, int(passed / total * 100))
-    if left < 0: col, lbl = "#EF4444", f"⏰ Probezeit seit {-left} Tag(en) überfällig – Entscheidung nötig!"
-    elif left == 0: col, lbl = "#F59E0B", "⏳ Probezeit endet heute"
-    elif left <= 3: col, lbl = "#F59E0B", f"⏳ Endspurt: noch {left} Tag(e) (bis {fmt(e0.isoformat())})"
-    else: col, lbl = "#3B82F6", f"🧪 Tag {passed} von {total} (bis {fmt(e0.isoformat())})"
-    return passed, pct, col, lbl
-
-
-def check_probation():
-    """Erinnerung in den Team-Channel, wenn eine Probezeit in ≤ 3 Tagen endet (läuft beim Öffnen der App)."""
-    if not _dc_url("team"): return
-    due = lambda m: m["status"] == "Probezeit" and days_left(m) <= 3 and not m.get("prob_reminded")
-    if not any(due(m) for m in data["members"]): return
-    with edit() as dd:
-        soon = [m for m in dd["members"] if due(m)]
-        for m in soon: m["prob_reminded"] = True
-    for m in soon:
-        left, e0 = days_left(m), prob_end(m)
-        send_discord_embed("team", "⏰ Probezeit abgelaufen" if left < 0 else "⏳ Probezeit endet bald",
-                           f"{dc_mention(m)} – bitte entscheiden: Probezeit **bestanden** oder **verlängern**?",
-                           color_hex="#EF4444" if left < 0 else "#F59E0B",
-                           fields=[{"name": "🛡️ Rang", "value": m["rank"]}, {"name": "📆 Ende", "value": fmt(e0.isoformat())},
-                                   {"name": "📅 Im Team seit", "value": fmt(m.get("joined"))}], author_name="System")
-
-
-def hl(text, terms):
-    out = esc(text)
-    if terms:
-        out = re.sub("(" + "|".join(re.escape(esc(t)) for t in terms) + ")",
-                     lambda mo: f"<mark style='background:rgba(255,255,255,.22);color:#fff;border-radius:3px;padding:0 2px'>{mo.group(1)}</mark>",
-                     out, flags=re.I)
-    return out
-
-
 # --- DATEN (atomar speichern, gesperrt, mit Backup) ---
 @st.cache_resource
 def _lock(): return threading.Lock()
 
 
-DEFAULTS = {"members": [], "applicants": [], "warnings": [], "absences": [], "tasks": [],
-            "protocols": [], "schedules": [], "notes": "", "users": [], "log": [], "settings": {}, "archive": []}
+DEFAULTS = {
+    "members": [], "applicants": [], "warnings": [], "absences": [], "tasks": [],
+    "protocols": [], "schedules": [], "notes": "", "users": [], "log": [], "settings": {}, "archive": []
+}
 
 
 def load_data():
@@ -247,7 +175,7 @@ def save_data(d):
     b = f"{DATA_FILE}.backup-{date.today()}"
     if not os.path.exists(b): shutil.copy(DATA_FILE, b)
     import glob
-    for old_b in sorted(glob.glob(DATA_FILE + ".backup-*"))[:-14]:  # nur die letzten 14 Tagesbackups behalten
+    for old_b in sorted(glob.glob(DATA_FILE + ".backup-*"))[:-14]:
         try: os.remove(old_b)
         except OSError: pass
 
@@ -275,6 +203,71 @@ def remove(coll, iid, label):
     st.rerun()
 
 
+# =====================================================================
+# DYNAMISCHES RANG- & KATEGORIEN-SYSTEM (KEINE HARDCODED RANKS MEHR)
+# =====================================================================
+def get_rank_categories(d=None):
+    src = d if d is not None else data
+    return src.get("settings", {}).get("rank_categories", [])
+
+
+def get_custom_ranks(d=None):
+    src = d if d is not None else data
+    return src.get("settings", {}).get("custom_ranks", [])
+
+
+def all_rank_names(d=None):
+    return [r["name"] for r in get_custom_ranks(d)]
+
+
+def get_rank_obj(rank_name, d=None):
+    return next((r for r in get_custom_ranks(d) if r["name"] == rank_name), None)
+
+
+def get_category_obj(cat_id, d=None):
+    return next((c for c in get_rank_categories(d) if c["id"] == cat_id), None)
+
+
+def rank_color(rank_name, d=None):
+    ro = get_rank_obj(rank_name, d)
+    if ro:
+        if ro.get("color"):
+            return ro["color"]
+        cat = get_category_obj(ro.get("category_id"), d)
+        if cat and cat.get("color"):
+            return cat["color"]
+    return "#9CA3AF"
+
+
+def rank_category_name(rank_name, d=None):
+    ro = get_rank_obj(rank_name, d)
+    if not ro:
+        return ""
+    cat = get_category_obj(ro.get("category_id"), d)
+    return cat["name"] if cat else ""
+
+
+def badge(r, show_cat=False):
+    c = rank_color(r)
+    cat_n = rank_category_name(r)
+    cat_tag = f" <span style='opacity:.75;font-weight:500;font-size:11px'>[{esc(cat_n)}]</span>" if (show_cat and cat_n) else ""
+    prefix = "👑 " if r.lower() == "owner" else ""
+    return (f"<span class='rank-badge' style='color:{c};border:1px solid {c};border-radius:999px;padding:2px 10px;"
+            f"font-weight:bold;font-size:13px'>{prefix}{esc(r)}{cat_tag}</span>")
+
+
+def rank_index(r):
+    names = all_rank_names()
+    return names.index(r) if r in names else 999
+
+
+def rank_title(old, new):
+    if old == new: return "🔄 Statusänderung", "#3B82F6"
+    names = all_rank_names()
+    up = names.index(new) < names.index(old) if old in names and new in names else None
+    return ("⬆️ Uprank", "#22C55E") if up else ("⬇️ Downrank", "#EF4444") if up is False else ("🔄 Rangänderung", "#3B82F6")
+
+
 # --- DISCORD (Webhooks + Bot) & SYSTEM-KONFIGURATION ---
 DC_CFG_FILE = "discord_config.json"
 DISCORD_API = "https://discord.com/api/v10"
@@ -289,7 +282,18 @@ def _dc_log(): return []
 
 
 def dc_cfg():
-    cfg = {"webhooks": {}, "bot_token": "", "guild_id": "", "roles": {}, "sync_roles": False, "maintenance_mode": False}
+    cfg = {
+        "webhooks": {},
+        "bot_token": "",
+        "guild_id": "",
+        "roles": {},
+        "sync_roles": False,
+        "maintenance_mode": False,
+        "team_base_role_id": "",     # @Team (Überrubrik für normale Teammitglieder)
+        "team_role_g_id": "",        # @Teamrolle G (für alle mit aktivierter Teamrolle)
+        "high_team_role_id": "",     # @High-Team (für High-Team Kategorien, z.B. ab Administrator)
+        "replace_team_with_high": True,  # Bei High-Team einfache Team-Überrubrik entfernen
+    }
     try:
         with open(DC_CFG_FILE, encoding="utf-8") as f: cfg.update(json.load(f))
     except Exception: pass
@@ -368,26 +372,145 @@ def dc_mention(m):
     return f"<@{d}> ({m['name']})" if d.isdigit() else m["name"]
 
 
+def compute_discord_role_changes(old_rank_name, new_rank_name, cfg=None, d=None):
+    """
+    Berechnet alle hinzuzufügenden ('add') und zu entfernenden ('remove') Discord-Rollen-IDs
+    basierend auf den dynamischen Rängen, Kategorie-Überrollen und der Teamrolle / High-Team-Logik.
+    """
+    cfg = cfg or dc_cfg()
+    src = d if d is not None else load_data()
+    cats = get_rank_categories(src)
+    ranks = get_custom_ranks(src)
+
+    old_ro = next((r for r in ranks if r["name"] == old_rank_name), None) if old_rank_name else None
+    new_ro = next((r for r in ranks if r["name"] == new_rank_name), None) if new_rank_name else None
+
+    to_add = []
+    to_remove = []
+
+    # 1. Einzel-Rang-Rollen
+    old_rid = (old_ro.get("discord_role_id") if old_ro else "") or cfg.get("roles", {}).get(old_rank_name or "", "")
+    new_rid = (new_ro.get("discord_role_id") if new_ro else "") or cfg.get("roles", {}).get(new_rank_name or "", "")
+
+    if old_rid and old_rid != new_rid:
+        to_remove.append(old_rid)
+    if new_rid:
+        to_add.append(new_rid)
+
+    # 2. Kategorie-Überrollen (alte Kategorien konsequent entfernen, neue vergeben)
+    new_cat = next((c for c in cats if new_ro and c["id"] == new_ro.get("category_id")), None)
+    target_cat_rid = (new_cat.get("discord_role_id") or "").strip() if new_cat else ""
+
+    if target_cat_rid:
+        to_add.append(target_cat_rid)
+
+    for c in cats:
+        c_rid = (c.get("discord_role_id") or "").strip()
+        if c_rid and c_rid != target_cat_rid:
+            to_remove.append(c_rid)
+
+    # 3. Teamrolle & High-Team Logik
+    gets_team = bool(new_ro.get("gets_team_role", False)) if new_ro else False
+    is_high_team = bool(new_cat.get("is_high_team", False)) if new_cat else False
+
+    team_base_id = (cfg.get("team_base_role_id") or "").strip()
+    team_g_id = (cfg.get("team_role_g_id") or "").strip()
+    high_team_id = (cfg.get("high_team_role_id") or "").strip()
+    replace_base = bool(cfg.get("replace_team_with_high", True))
+
+    if gets_team:
+        if team_g_id:
+            to_add.append(team_g_id)
+        if is_high_team:
+            if high_team_id:
+                to_add.append(high_team_id)
+            if replace_base and team_base_id:
+                to_remove.append(team_base_id)
+            elif team_base_id:
+                to_add.append(team_base_id)
+        else:
+            if team_base_id:
+                to_add.append(team_base_id)
+            if high_team_id:
+                to_remove.append(high_team_id)
+    else:
+        if team_base_id:
+            to_remove.append(team_base_id)
+        if team_g_id:
+            to_remove.append(team_g_id)
+        if high_team_id:
+            to_remove.append(high_team_id)
+
+    # Nur gültige Ziffern-IDs behalten & Überschneidungen bereinigen
+    add_clean = list(dict.fromkeys(x for x in to_add if str(x).isdigit()))
+    rem_clean = list(dict.fromkeys(x for x in to_remove if str(x).isdigit() and x not in add_clean))
+    return add_clean, rem_clean
+
+
 def dc_sync_role(discord_id, old, new):
     cfg = dc_cfg()
     tok = os.environ.get("DISCORD_BOT_TOKEN") or cfg["bot_token"]
     if not (cfg["sync_roles"] and tok and cfg["guild_id"]): return None
     if not str(discord_id).isdigit():
-        return "⚠️ Rang geändert, aber Discord-Rolle nicht angepasst: Beim Mitglied fehlt eine gültige Discord-ID (Zahl)."
-    new_r, old_r = cfg["roles"].get(new, ""), cfg["roles"].get(old, "")
-    if not new_r: return f"⚠️ Rang geändert, aber für „{new}“ ist keine Discord-Rolle zugeordnet."
+        return "⚠️ Rang geändert, aber Discord-Rollen nicht angepasst: Beim Mitglied fehlt eine gültige Discord-ID (Zahl)."
+    to_add, to_remove = compute_discord_role_changes(old, new, cfg)
+    if not to_add and not to_remove:
+        return f"⚠️ Rang geändert, aber für „{new}“ sind keine Discord-Rollen-IDs hinterlegt."
     base, log, errs = f"{DISCORD_API}/guilds/{cfg['guild_id']}/members/{discord_id}/roles", _dc_log(), []
-    for method, rid in ([("DELETE", old_r)] if old_r and old_r != new_r else []) + [("PUT", new_r)]:
+    for method, rid in [("DELETE", r) for r in to_remove] + [("PUT", r) for r in to_add]:
         code, err = _dc_request(method, f"{base}/{rid}", token=cfg["bot_token"])
-        _dc_log_add(log, "Rollen-Sync", code in (200, 204), code, err)
+        _dc_log_add(log, f"Rollen-Sync ({method})", code in (200, 204), code, err)
         if code not in (200, 204): errs.append(DC_ERR.get(code, f"Fehler {code}."))
-    return "✅ Discord-Rolle angepasst." if not errs else "⚠️ Discord-Rolle nicht (vollständig) angepasst: " + " ".join(dict.fromkeys(errs))
+    return "✅ Discord-Rollen (inkl. Kategorie & Teamstatus) angepasst." if not errs else "⚠️ Discord-Rollen nicht vollständig angepasst: " + " ".join(dict.fromkeys(errs))
 
 
-def rank_title(old, new):
-    if old == new: return "🔄 Statusänderung", "#3B82F6"
-    up = RANKS.index(new) < RANKS.index(old) if old in RANKS and new in RANKS else None
-    return ("⬆️ Uprank", "#22C55E") if up else ("⬇️ Downrank", "#EF4444") if up is False else ("🔄 Rangänderung", "#3B82F6")
+def prob_days(): return int(data["settings"].get("probation_days", 14))
+
+
+def prob_start(m): return parse_d(m.get("probation_start") or m.get("joined"), date.today())
+
+
+def prob_end(m): return parse_d(m.get("probation_end")) or prob_start(m) + timedelta(days=prob_days())
+
+
+def days_left(m): return (prob_end(m) - date.today()).days
+
+
+def probation_info(m):
+    s0, e0, left = prob_start(m), prob_end(m), days_left(m)
+    total, passed = max((e0 - s0).days, 1), max(0, (date.today() - s0).days)
+    pct = min(100, int(passed / total * 100))
+    if left < 0: col, lbl = "#EF4444", f"⏰ Probezeit seit {-left} Tag(en) überfällig – Entscheidung nötig!"
+    elif left == 0: col, lbl = "#F59E0B", "⏳ Probezeit endet heute"
+    elif left <= 3: col, lbl = "#F59E0B", f"⏳ Endspurt: noch {left} Tag(e) (bis {fmt(e0.isoformat())})"
+    else: col, lbl = "#3B82F6", f"🧪 Tag {passed} von {total} (bis {fmt(e0.isoformat())})"
+    return passed, pct, col, lbl
+
+
+def check_probation():
+    """Erinnerung in den Team-Channel, wenn eine Probezeit in ≤ 3 Tagen endet (läuft beim Öffnen der App)."""
+    if not _dc_url("team"): return
+    due = lambda m: m["status"] == "Probezeit" and days_left(m) <= 3 and not m.get("prob_reminded")
+    if not any(due(m) for m in data["members"]): return
+    with edit() as dd:
+        soon = [m for m in dd["members"] if due(m)]
+        for m in soon: m["prob_reminded"] = True
+    for m in soon:
+        left, e0 = days_left(m), prob_end(m)
+        send_discord_embed("team", "⏰ Probezeit abgelaufen" if left < 0 else "⏳ Probezeit endet bald",
+                           f"{dc_mention(m)} – bitte entscheiden: Probezeit **bestanden** oder **verlängern**?",
+                           color_hex="#EF4444" if left < 0 else "#F59E0B",
+                           fields=[{"name": "🛡️ Rang", "value": m["rank"]}, {"name": "📆 Ende", "value": fmt(e0.isoformat())},
+                                   {"name": "📅 Im Team seit", "value": fmt(m.get("joined"))}], author_name="System")
+
+
+def hl(text, terms):
+    out = esc(text)
+    if terms:
+        out = re.sub("(" + "|".join(re.escape(esc(t)) for t in terms) + ")",
+                     lambda mo: f"<mark style='background:rgba(255,255,255,.22);color:#fff;border-radius:3px;padding:0 2px'>{mo.group(1)}</mark>",
+                     out, flags=re.I)
+    return out
 
 
 def perm_opts(k): return PERM_OPTS if k == "absences" else [o for o in PERM_OPTS if o != "absence_own"]
@@ -449,16 +572,62 @@ def set_password(username, new_pw, label):
                 x.pop("password", None)
 
 
-# --- SESSION, THEME, CSS ---
+# --- SESSION, INITIALISIERUNG & THEME ---
 ss = st.session_state
 ss.setdefault("user", None)
 data = load_data()
+
+# Einmalige Initialisierung eines Start-Katalogs (komplett editierbar & löschbar unter Einstellungen)
+if not data["settings"].get("ranks_initialized"):
+    _old_dc_roles = dc_cfg().get("roles", {})
+    _init_cats = [
+        {"id": "cat_leitung", "name": "Leitung", "color": "#A855F7", "discord_role_id": "", "is_high_team": True},
+        {"id": "cat_teamverw", "name": "Teamverwaltung", "color": "#FF7B00", "discord_role_id": "", "is_high_team": True},
+        {"id": "cat_admin", "name": "Administration", "color": "#FF2A2A", "discord_role_id": "", "is_high_team": True},
+        {"id": "cat_mod", "name": "Moderatoren", "color": "#3B82F6", "discord_role_id": "", "is_high_team": False},
+        {"id": "cat_supp", "name": "Supporter", "color": "#EAB308", "discord_role_id": "", "is_high_team": False},
+    ]
+    _seed_ranks = [
+        ("Owner", "cat_leitung", "#A855F7", True, False),
+        ("Projektleitung", "cat_leitung", "#FF69B4", True, False),
+        ("Developer", "cat_leitung", "#FFFFFF", True, False),
+        ("Teamleitung", "cat_teamverw", "#FF7B00", True, False),
+        ("Administrator", "cat_admin", "#FF2A2A", True, False),
+        ("Test-Administrator", "cat_admin", "#FF2A2A", True, True),
+        ("Moderator 3", "cat_mod", "#3B82F6", True, False),
+        ("Moderator 2", "cat_mod", "#3B82F6", True, False),
+        ("Moderator 1", "cat_mod", "#3B82F6", True, False),
+        ("Test-Moderator", "cat_mod", "#3B82F6", True, True),
+        ("Supporter 3", "cat_supp", "#EAB308", True, False),
+        ("Supporter 2", "cat_supp", "#EAB308", True, False),
+        ("Supporter 1", "cat_supp", "#EAB308", True, False),
+        ("Test-Supporter", "cat_supp", "#EAB308", True, True),
+    ]
+    _init_ranks = [
+        {
+            "id": uid(),
+            "name": rn,
+            "category_id": cid,
+            "color": col,
+            "discord_role_id": _old_dc_roles.get(rn, ""),
+            "gets_team_role": gtr,
+            "is_applicant_target": app_t,
+        }
+        for rn, cid, col, gtr, app_t in _seed_ranks
+    ]
+    with edit() as _d:
+        _d["settings"]["rank_categories"] = _init_cats
+        _d["settings"]["custom_ranks"] = _init_ranks
+        _d["settings"]["ranks_initialized"] = True
+    data = load_data()
+
 if data["settings"].get("webhooks"):  # Migration: Webhook-URLs raus aus den Teamdaten
     _c = dc_cfg()
     _c["webhooks"] = {**data["settings"]["webhooks"], **_c["webhooks"]}
     dc_save(_c)
     with edit() as _d: _d["settings"].pop("webhooks", None)
     data = load_data()
+
 uname = ss.user["username"] if ss.user else None
 tname = data["settings"].get("themes", {}).get(uname) or DEFAULT_THEME
 t = dict(THEMES.get(tname, THEMES[DEFAULT_THEME]))
@@ -598,7 +767,7 @@ if not any(u.get("is_admin") for u in data["users"]):
                 st.rerun()
     st.stop()
 
-if not any(u.get("is_owner") for u in data["users"]):  # erster Administrator wird Alpha-Owner
+if not any(u.get("is_owner") for u in data["users"]):
     _first = next(u for u in data["users"] if u.get("is_admin"))
     with edit("Alpha-Owner festgelegt") as d:
         for x in d["users"]:
@@ -726,7 +895,8 @@ def delete_btn(coll, iid, what):
     if can_write: confirm_delete(coll, iid, what, f"{coll}_{iid}")
 
 
-member_names = [m["name"] for m in sorted(data["members"], key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99)]
+RANKS = all_rank_names()
+member_names = [m["name"] for m in sorted(data["members"], key=lambda m: rank_index(m["rank"]))]
 rank_of = {m["name"]: m["rank"] for m in data["members"]}
 
 
@@ -777,9 +947,9 @@ if global_q:
         return ", ".join(v) if isinstance(v, list) else str(v)
 
     G = {}
-    G["team"] = [f"<strong>{H(m['name'])}</strong> {badge(m['rank'])} {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}"
+    G["team"] = [f"<strong>{H(m['name'])}</strong> {badge(m['rank'], True)} {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}"
                  f"<br><span class='muted'>Discord-ID: {H(m.get('discord_id', '-'))} | Seit: {fmt(m.get('joined'))}</span>"
-                 for m in data["members"] if hit(m["name"], m.get("discord_id", ""), m["rank"], m["status"])]
+                 for m in data["members"] if hit(m["name"], m.get("discord_id", ""), m["rank"], rank_category_name(m["rank"]), m["status"])]
     G["archive"] = [f"<strong>{H(a['name'])}</strong> {badge(a['rank'])}<br><span class='muted'>Entfernt am {fmt(a['removed'])} von {esc(a['removed_by'])}</span><br>{H(snip(a.get('reason', '')))}"
                     for a in data["archive"] if hit(a["name"], a.get("reason", ""), a.get("rank", ""))]
     G["applicants"] = [f"<strong>{H(a['name'])}</strong> {chip(a['status'], '#3B82F6')}<br><span class='muted'>{esc(a['role'])} · {fmt(a['date'])}</span><br>{H(snip(a.get('notes', '')))}"
@@ -822,8 +992,12 @@ elif key == "dashboard":
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("🛡️ Rang-Verteilung")
-        rows = "".join(f"<div style='margin-bottom:10px'>{badge(r)} <strong>× {len(ms)}</strong><div class='muted' style='margin-top:4px'>{', '.join(esc(m['name']) for m in ms)}</div></div>"
+        known_set = set(RANKS)
+        rows = "".join(f"<div style='margin-bottom:10px'>{badge(r, True)} <strong>× {len(ms)}</strong><div class='muted' style='margin-top:4px'>{', '.join(esc(m['name']) for m in ms)}</div></div>"
                        for r in RANKS if (ms := [m for m in data["members"] if m["rank"] == r]))
+        legacy = [m for m in data["members"] if m["rank"] not in known_set]
+        if legacy:
+            rows += f"<div style='margin-bottom:10px'>{badge('Sonstige Ränge')} <strong>× {len(legacy)}</strong><div class='muted' style='margin-top:4px'>{', '.join(esc(m['name']) + ' (' + esc(m['rank']) + ')' for m in legacy)}</div></div>"
         show(rows or "<span class='muted'>Noch keine Teammitglieder eingetragen.</span>")
     with c2:
         st.subheader("📅 Aktuelle Abmeldungen")
@@ -874,52 +1048,68 @@ elif key == "team":
     st.title("👥 Team-Übersicht & Kader")
     if can_write:
         with st.expander("➕ Neues Teammitglied hinzufügen"):
-            with st.form("add_member", clear_on_submit=True):
-                a, b, c, e = st.columns(4)
-                n = a.text_input("Discord Name / Tag")
-                did = b.text_input("Discord-ID (optional)")
-                r = c.selectbox("Rang", assignable_ranks() or ["–"])
-                s = e.selectbox("Status", MEMBER_STATUS)
-                if st.form_submit_button("Mitglied hinzufügen", use_container_width=True):
-                    n = n.strip()
-                    if not n: st.warning("Bitte einen Namen eingeben.")
-                    elif n.lower() in [x.lower() for x in member_names]: st.warning("Dieses Mitglied existiert bereits.")
-                    elif r not in RANKS: st.warning("Du darfst keinen Rang vergeben. Verknüpfe dein Konto mit einem Teammitglied (Benutzer & Rechte).")
-                    elif did.strip() and not did.strip().isdigit(): st.warning("Die Discord-ID besteht nur aus Ziffern.")
-                    else:
-                        today_iso = date.today().isoformat()
-                        with edit(f"Mitglied {n} hinzugefügt") as d:
-                            d["members"].append({
-                                "id": uid(), "name": n, "discord_id": did.strip() or "-", "rank": r,
-                                "status": s, "joined": today_iso,
-                                "probation_start": today_iso if s == "Probezeit" else "",
-                                "probation_end": (date.today() + timedelta(days=prob_days())).isoformat() if s == "Probezeit" else ""
-                            })
-                        send_discord_embed(
-                            "team",
-                            "🆕 Neues Teammitglied im Kader!",
-                            f"**{n}** wurde soeben offiziell in das Team von **Wolf Life** aufgenommen.",
-                            color_hex=rank_color(r),
-                            fields=[
-                                {"name": "👤 Mitglied", "value": n, "inline": True},
-                                {"name": "🛡️ Rang", "value": r, "inline": True},
-                                {"name": "📌 Status", "value": s, "inline": True},
-                                {"name": "🆔 Discord-ID", "value": did.strip() or "-", "inline": True},
-                            ],
-                            author_name=user["username"]
-                        )
-                        st.rerun()
+            if not RANKS:
+                st.warning("Es wurden noch keine Ränge erstellt. Bitte zuerst unter **⚙️ Einstellungen → 🛡️ Ränge & Kategorien** Ränge anlegen.")
+            else:
+                with st.form("add_member", clear_on_submit=True):
+                    a, b, c, e = st.columns(4)
+                    n = a.text_input("Discord Name / Tag")
+                    did = b.text_input("Discord-ID (optional)")
+                    avail_ranks = assignable_ranks()
+                    r = c.selectbox("Rang", avail_ranks or ["–"], format_func=lambda x: f"{x} ({rank_category_name(x)})" if rank_category_name(x) else x)
+                    s = e.selectbox("Status", MEMBER_STATUS)
+                    if st.form_submit_button("Mitglied hinzufügen", use_container_width=True):
+                        n = n.strip()
+                        if not n: st.warning("Bitte einen Namen eingeben.")
+                        elif n.lower() in [x.lower() for x in member_names]: st.warning("Dieses Mitglied existiert bereits.")
+                        elif r not in RANKS: st.warning("Du darfst keinen Rang vergeben. Verknüpfe dein Konto mit einem Teammitglied (Benutzer & Rechte).")
+                        elif did.strip() and not did.strip().isdigit(): st.warning("Die Discord-ID besteht nur aus Ziffern.")
+                        else:
+                            today_iso = date.today().isoformat()
+                            with edit(f"Mitglied {n} hinzugefügt") as d:
+                                d["members"].append({
+                                    "id": uid(), "name": n, "discord_id": did.strip() or "-", "rank": r,
+                                    "status": s, "joined": today_iso,
+                                    "probation_start": today_iso if s == "Probezeit" else "",
+                                    "probation_end": (date.today() + timedelta(days=prob_days())).isoformat() if s == "Probezeit" else ""
+                                })
+                            send_discord_embed(
+                                "team",
+                                "🆕 Neues Teammitglied im Kader!",
+                                f"**{n}** wurde soeben offiziell in das Team von **Wolf Life** aufgenommen.",
+                                color_hex=rank_color(r),
+                                fields=[
+                                    {"name": "👤 Mitglied", "value": n, "inline": True},
+                                    {"name": "🛡️ Rang", "value": r, "inline": True},
+                                    {"name": "📂 Kategorie", "value": rank_category_name(r) or "-", "inline": True},
+                                    {"name": "📌 Status", "value": s, "inline": True},
+                                    {"name": "🆔 Discord-ID", "value": did.strip() or "-", "inline": True},
+                                ],
+                                author_name=user["username"]
+                            )
+                            if did.strip().isdigit():
+                                _res = dc_sync_role(did.strip(), "", r)
+                                if _res: flash(_res, "success" if _res.startswith("✅") else "warning")
+                            st.rerun()
 
     def warn_txt(n):
         c = sum(w["member"] == n or w["member"].startswith(n + " (") for w in data["warnings"])
         return f" | ⚠️ {c} Verwarnung(en)" if c else ""
 
-    f1, f2 = st.columns([3, 1])
+    f1, f2, f3 = st.columns([2.5, 1.2, 1])
     q = f1.text_input("🔍 Mitglied suchen...").lower()
-    sf = f2.selectbox("Status", ["Alle"] + MEMBER_STATUS)
-    shown = [m for m in data["members"] if q in m["name"].lower() and sf in ("Alle", m["status"])]
+    cat_names_filter = ["Alle Kategorien"] + [c["name"] for c in get_rank_categories()]
+    cf = f2.selectbox("Kategorie", cat_names_filter)
+    sf = f3.selectbox("Status", ["Alle"] + MEMBER_STATUS)
 
-    for m in sorted(shown, key=lambda m: RANKS.index(m["rank"]) if m["rank"] in RANKS else 99):
+    shown = [
+        m for m in data["members"]
+        if q in m["name"].lower()
+        and sf in ("Alle", m["status"])
+        and (cf == "Alle Kategorien" or rank_category_name(m["rank"]) == cf)
+    ]
+
+    for m in sorted(shown, key=lambda m: rank_index(m["rank"])):
         prob_html = ""
         if m["status"] == "Probezeit":
             _, pct, pcol, plbl = probation_info(m)
@@ -930,7 +1120,7 @@ elif key == "team":
         card_content = (f"<div style='display:flex;justify-content:space-between;align-items:center;width:100%'>"
                         f"<div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
                         f"<span class='muted'>ID: {esc(m.get('discord_id', '-'))} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
-                        f"<div style='display:flex;align-items:center;gap:12px;'>{badge(m['rank'])}</div></div>{prob_html}")
+                        f"<div style='display:flex;align-items:center;gap:12px;'>{badge(m['rank'], True)}</div></div>{prob_html}")
         
         if can_write and can_manage_rank(m["rank"]):
             col_card, col_btn = st.columns([11, 1])
@@ -940,8 +1130,9 @@ elif key == "team":
                 with st.popover("✏️"):
                     st.markdown(f"### ✏️ {esc(m['name'])} bearbeiten")
                     a, b = st.columns(2)
-                    rk_opts = [r for r in RANKS if r == m["rank"] or r in assignable_ranks()]
-                    nr = a.selectbox("Rang", rk_opts, index=rk_opts.index(m["rank"]) if m["rank"] in rk_opts else 0, key=f"r{m['id']}")
+                    rk_opts = list(dict.fromkeys(([m["rank"]] if m["rank"] not in RANKS else []) + [r for r in RANKS if r == m["rank"] or r in assignable_ranks()]))
+                    nr = a.selectbox("Rang", rk_opts, index=rk_opts.index(m["rank"]) if m["rank"] in rk_opts else 0,
+                                     format_func=lambda x: f"{x} ({rank_category_name(x)})" if rank_category_name(x) else x, key=f"r{m['id']}")
                     ns = b.selectbox("Status", MEMBER_STATUS, index=MEMBER_STATUS.index(m["status"]) if m["status"] in MEMBER_STATUS else 0, key=f"s{m['id']}")
                     if ns == "Probezeit":
                         try: def_pstart = date.fromisoformat(m.get("probation_start") or m.get("joined"))
@@ -975,11 +1166,12 @@ elif key == "team":
                                 fields=[
                                     {"name": "👤 Mitglied", "value": m["name"], "inline": True},
                                     {"name": "🛡️ Rang", "value": f"{old_r} ➔ **{nr}**" if old_r != nr else nr, "inline": True},
+                                    {"name": "📂 Kategorie", "value": rank_category_name(nr) or "-", "inline": True},
                                     {"name": "📌 Status", "value": f"{old_s} ➔ **{ns}**" if old_s != ns else ns, "inline": True},
                                 ],
                                 author_name=user["username"]
                             )
-                        if old_r != nr:
+                        if old_r != nr or (new_did and new_did != old_did):
                             _res = dc_sync_role(new_did or "-", old_r, nr)
                             if _res: flash(_res, "success" if _res.startswith("✅") else "warning")
                         update("members", m["id"], f"{m['name']}: {nr}/{ns}", **ch)
@@ -1036,12 +1228,13 @@ elif key == "archive":
 # =====================================================================
 elif key == "applicants":
     st.title("📋 Bewerber & Testphase")
+    _target_ranks = [r["name"] for r in get_custom_ranks() if r.get("is_applicant_target")] or RANKS
     if can_write:
         with st.expander("➕ Neue Bewerbung erfassen"):
             with st.form("add_app", clear_on_submit=True):
                 a, b, c = st.columns(3)
                 n = a.text_input("Discord Name / Tag")
-                role = b.selectbox("Rolle", list(APP_ROLES))
+                role = b.selectbox("Ziel-Rang", _target_ranks or ["–"])
                 stat = c.selectbox("Status", APP_STATUS)
                 notes = st.text_area("Notizen")
                 if st.form_submit_button("Speichern", use_container_width=True):
@@ -1056,7 +1249,7 @@ elif key == "applicants":
                             color_hex="#3B82F6",
                             fields=[
                                 {"name": "👤 Bewerber", "value": n.strip(), "inline": True},
-                                {"name": "🎯 Angestrebte Rolle", "value": role, "inline": True},
+                                {"name": "🎯 Angestrebter Rang", "value": role, "inline": True},
                                 {"name": "📊 Aktueller Status", "value": stat, "inline": True},
                                 {"name": "📝 Notizen / Eindruck", "value": notes.strip() or "Keine Notizen hinterlegt.", "inline": False},
                             ],
@@ -1069,7 +1262,7 @@ elif key == "applicants":
         hint = "".join(f"<div style='color:#EF4444;margin-top:6px'>⚠️ Ehemaliges Mitglied – entfernt am {fmt(a['removed'])}: {esc(a['reason'])}</div>" for a in past)
         note = f"<p><em>Notiz: {esc(ap['notes'])}</em></p>" if ap.get("notes") else ""
         show(f"<h3>{esc(ap['name'])} <span style='font-size:14px;color:{t['ACCENT']}'>({esc(ap['status'])})</span></h3>"
-             f"<p><strong>Rolle:</strong> {esc(ap['role'])} | <strong>Datum:</strong> {fmt(ap['date'])}</p>{note}{hint}")
+             f"<p><strong>Ziel-Rang:</strong> {esc(ap['role'])} | <strong>Datum:</strong> {fmt(ap['date'])}</p>{note}{hint}")
         if can_write:
             with st.expander(f"✏️ {ap['name']} bearbeiten"):
                 ns = st.selectbox("Status", APP_STATUS, index=APP_STATUS.index(ap["status"]) if ap["status"] in APP_STATUS else 0, key=f"as{ap['id']}")
@@ -1082,7 +1275,7 @@ elif key == "applicants":
                         color_hex=col_st,
                         fields=[
                             {"name": "👤 Bewerber", "value": ap["name"], "inline": True},
-                            {"name": "🎯 Rolle", "value": ap["role"], "inline": True},
+                            {"name": "🎯 Ziel-Rang", "value": ap["role"], "inline": True},
                             {"name": "🔄 Neuer Status", "value": f"**{ns}**", "inline": True},
                         ],
                         author_name=user["username"]
@@ -1090,7 +1283,7 @@ elif key == "applicants":
                     update("applicants", ap["id"], f"Bewerbung {ap['name']} → {ns}", status=ns)
                 if ap["status"] == "Angenommen" and ap["name"].lower() not in [x.lower() for x in member_names]:
                     if st.button("👥 Als Mitglied (Probezeit) übernehmen", key=f"adopt{ap['id']}"):
-                        new_rank = APP_ROLES.get(ap["role"], "Test-Supporter")
+                        new_rank = ap["role"] if ap["role"] in RANKS else (RANKS[-1] if RANKS else ap["role"])
                         today_iso = date.today().isoformat()
                         with edit(f"{ap['name']} ins Team übernommen") as d:
                             d["members"].append({"id": uid(), "name": ap["name"], "discord_id": "-",
@@ -1100,7 +1293,7 @@ elif key == "applicants":
                         send_discord_embed(
                             "team",
                             "🎉 Bewerber ins Team übernommen!",
-                            f"**{ap['name']}** hat die Bewerbungsphase bestanden und startet jetzt in die **14-tägige Probezeit**!",
+                            f"**{ap['name']}** hat die Bewerbungsphase bestanden und startet jetzt in die **{prob_days()}-tägige Probezeit**!",
                             color_hex="#22C55E",
                             fields=[
                                 {"name": "👤 Neues Teammitglied", "value": ap["name"], "inline": True},
@@ -1443,7 +1636,7 @@ elif key == "notes":
 
 
 # =====================================================================
-# EINSTELLUNGEN & DISCORD-WEBHOOK-KONFIGURATION
+# EINSTELLUNGEN, RÄNGE & DISCORD-KONFIGURATION
 # =====================================================================
 elif key == "settings":
     st.title("⚙️ Einstellungen & Design")
@@ -1472,10 +1665,221 @@ elif key == "settings":
             with edit("Standard-Probezeit geändert") as d: d["settings"]["probation_days"] = int(nd)
             st.rerun()
 
+        # =================================================================
+        # DYNAMISCHE RÄNGE & KATEGORIEN (ÜBERGEORDNETE ROLLEN)
+        # =================================================================
+        st.markdown("---")
+        st.subheader("🛡️ Ränge & Kategorien (Übergeordnete Ränge)")
+        st.caption(
+            "Erstelle hier beliebig eigene Kategorien (Oberrubriken wie Leitung, Administration, Moderatoren, Supporter) "
+            "und ordne deine spezifischen Ränge zu. Die Reihenfolge von oben nach unten bestimmt die Hierarchie (Uprank / Downrank)."
+        )
+
+        cats = get_rank_categories()
+        custom_ranks = get_custom_ranks()
+
+        tab_ranks, tab_cats = st.tabs(["🎖️ Ränge verwalten", "📂 Kategorien (Oberrubriken) verwalten"])
+
+        # --- TAB 1: RÄNGE VERWALTEN ---
+        with tab_ranks:
+            with st.expander("➕ Neuen Rang erstellen", expanded=not bool(custom_ranks)):
+                with st.form("create_rank_form", clear_on_submit=True):
+                    rc1, rc2, rc3 = st.columns([2.2, 1.8, 0.8])
+                    new_r_name = rc1.text_input("Rang-Name", placeholder="z.B. Test-Supporter, Supporter 2, Moderator 1...")
+                    cat_options = {c["id"]: c["name"] for c in cats}
+                    new_r_cat = rc2.selectbox("Kategorie (Übergeordneter Rang)", options=[""] + list(cat_options.keys()),
+                                              format_func=lambda cid: cat_options.get(cid, "– Keine Kategorie –"))
+                    new_r_col = rc3.color_picker("Farbe", value="#3B82F6")
+
+                    rc4, rc5, rc6 = st.columns([2, 1.5, 1.5])
+                    new_r_dcid = rc4.text_input("Discord-Rollen-ID (optional)", placeholder="123456789012345678")
+                    new_r_team = rc5.checkbox("Teamrolle erhalten?", value=True,
+                                              help="Wenn aktiv, erhält man bei diesem Rang die Basis-Teamrollen (Team-Überrubrik & Teamrolle G bzw. High-Team).")
+                    new_r_app = rc6.checkbox("Als Bewerbungs-Zielrang", value=False,
+                                             help="Steht im Bewerber-Tab als Auswahl zur Verfügung.")
+
+                    if st.form_submit_button("✅ Rang erstellen", use_container_width=True):
+                        rn_clean = new_r_name.strip()
+                        if not rn_clean:
+                            st.error("Bitte einen Rang-Namen eingeben.")
+                        elif any(x["name"].lower() == rn_clean.lower() for x in custom_ranks):
+                            st.error("Ein Rang mit diesem Namen existiert bereits.")
+                        elif new_r_dcid.strip() and not new_r_dcid.strip().isdigit():
+                            st.error("Die Discord-Rollen-ID darf nur aus Ziffern bestehen.")
+                        else:
+                            with edit(f"Rang „{rn_clean}“ erstellt") as d:
+                                d["settings"].setdefault("custom_ranks", []).append({
+                                    "id": uid(),
+                                    "name": rn_clean,
+                                    "category_id": new_r_cat,
+                                    "color": new_r_col,
+                                    "discord_role_id": new_r_dcid.strip(),
+                                    "gets_team_role": bool(new_r_team),
+                                    "is_applicant_target": bool(new_r_app),
+                                })
+                            st.rerun()
+
+            if not custom_ranks:
+                st.info("Noch keine Ränge angelegt.")
+            else:
+                for idx_r, r_obj in enumerate(custom_ranks):
+                    cat_obj = get_category_obj(r_obj.get("category_id"))
+                    cat_lbl = cat_obj["name"] if cat_obj else "Keine Kategorie"
+                    team_badge = chip("Teamrolle aktiv", "#22C55E") if r_obj.get("gets_team_role") else chip("Keine Teamrolle", "#9CA3AF")
+                    high_badge = f" {chip('High-Team', '#A855F7')}" if (cat_obj and cat_obj.get("is_high_team")) else ""
+                    dc_info = f" · Discord-ID: `{r_obj['discord_role_id']}`" if r_obj.get("discord_role_id") else ""
+
+                    col_info, col_up, col_dn, col_ed = st.columns([8.5, 0.7, 0.7, 0.9])
+                    with col_info:
+                        show(f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'>"
+                             f"<div><strong>#{idx_r + 1}</strong> &nbsp; {badge(r_obj['name'])} &nbsp; "
+                             f"<span class='muted'>Kategorie: <strong>{esc(cat_lbl)}</strong>{dc_info}</span></div>"
+                             f"<div>{team_badge}{high_badge}</div></div>")
+                    with col_up:
+                        if st.button("⬆️", key=f"rup_{r_obj['id']}", disabled=(idx_r == 0), help="Nach oben (höherer Rang)"):
+                            with edit(f"Rang {r_obj['name']} nach oben verschoben") as d:
+                                lst = d["settings"]["custom_ranks"]
+                                lst[idx_r - 1], lst[idx_r] = lst[idx_r], lst[idx_r - 1]
+                            st.rerun()
+                    with col_dn:
+                        if st.button("⬇️", key=f"rdn_{r_obj['id']}", disabled=(idx_r == len(custom_ranks) - 1), help="Nach unten (niedrigerer Rang)"):
+                            with edit(f"Rang {r_obj['name']} nach unten verschoben") as d:
+                                lst = d["settings"]["custom_ranks"]
+                                lst[idx_r + 1], lst[idx_r] = lst[idx_r], lst[idx_r + 1]
+                            st.rerun()
+                    with col_ed:
+                        with st.popover("✏️"):
+                            st.markdown(f"### ✏️ Rang bearbeiten")
+                            ed_name = st.text_input("Rang-Name", value=r_obj["name"], key=f"ern_{r_obj['id']}")
+                            cat_opts_ed = [""] + [c["id"] for c in cats]
+                            cat_map_ed = {c["id"]: c["name"] for c in cats}
+                            ed_cat = st.selectbox(
+                                "Kategorie (Übergeordneter Rang)",
+                                options=cat_opts_ed,
+                                index=cat_opts_ed.index(r_obj.get("category_id")) if r_obj.get("category_id") in cat_opts_ed else 0,
+                                format_func=lambda cid: cat_map_ed.get(cid, "– Keine Kategorie –"),
+                                key=f"erc_{r_obj['id']}"
+                            )
+                            ed_col = st.color_picker("Farbe", value=r_obj.get("color") or "#3B82F6", key=f"ercol_{r_obj['id']}")
+                            ed_dcid = st.text_input("Discord-Rollen-ID", value=r_obj.get("discord_role_id", ""), key=f"erdc_{r_obj['id']}").strip()
+                            ed_team = st.checkbox("Teamrolle erhalten (Team-Überrubrik & Teamrolle G / High-Team)",
+                                                  value=bool(r_obj.get("gets_team_role", False)), key=f"ertm_{r_obj['id']}")
+                            ed_app = st.checkbox("Als Bewerbungs-Zielrang anzeigen",
+                                                 value=bool(r_obj.get("is_applicant_target", False)), key=f"erap_{r_obj['id']}")
+
+                            if st.button("💾 Änderungen speichern", key=f"ersv_{r_obj['id']}", use_container_width=True):
+                                clean_n = ed_name.strip()
+                                if not clean_n:
+                                    st.error("Name darf nicht leer sein.")
+                                elif clean_n.lower() != r_obj["name"].lower() and any(x["name"].lower() == clean_n.lower() for x in custom_ranks):
+                                    st.error("Dieser Rang-Name existiert bereits.")
+                                elif ed_dcid and not ed_dcid.isdigit():
+                                    st.error("Discord-Rollen-ID darf nur aus Ziffern bestehen.")
+                                else:
+                                    old_n = r_obj["name"]
+                                    with edit(f"Rang „{clean_n}“ bearbeitet") as d:
+                                        for x in d["settings"]["custom_ranks"]:
+                                            if x["id"] == r_obj["id"]:
+                                                x.update({
+                                                    "name": clean_n,
+                                                    "category_id": ed_cat,
+                                                    "color": ed_col,
+                                                    "discord_role_id": ed_dcid,
+                                                    "gets_team_role": ed_team,
+                                                    "is_applicant_target": ed_app,
+                                                })
+                                        if old_n != clean_n:
+                                            for m in d["members"]:
+                                                if m["rank"] == old_n: m["rank"] = clean_n
+                                            for a in d["archive"]:
+                                                if a["rank"] == old_n: a["rank"] = clean_n
+                                    st.rerun()
+
+                            st.markdown("---")
+                            if st.button("🗑 Rang löschen", key=f"erdel_{r_obj['id']}", use_container_width=True):
+                                with edit(f"Rang „{r_obj['name']}“ gelöscht") as d:
+                                    d["settings"]["custom_ranks"] = [x for x in d["settings"]["custom_ranks"] if x["id"] != r_obj["id"]]
+                                st.rerun()
+
+        # --- TAB 2: KATEGORIEN (OBERRUBRIKEN) VERWALTEN ---
+        with tab_cats:
+            with st.expander("➕ Neue Kategorie (Oberrubrik) erstellen", expanded=not bool(cats)):
+                with st.form("create_cat_form", clear_on_submit=True):
+                    cc1, cc2, cc3 = st.columns([2, 2, 0.8])
+                    c_name = cc1.text_input("Kategorie-Name", placeholder="z.B. Leitung, Teamverwaltung, Administration, Moderatoren, Supporter")
+                    c_dcid = cc2.text_input("Discord Kategorie-Überrollen-ID (optional)", placeholder="123456789012345678")
+                    c_col = cc3.color_picker("Farbe", value="#EF4444")
+                    c_high = st.checkbox("Gehört zum High-Team (vergibt High-Team-Rolle statt normaler Team-Überrubrik)", value=False)
+                    if st.form_submit_button("✅ Kategorie erstellen", use_container_width=True):
+                        cn_clean = c_name.strip()
+                        if not cn_clean:
+                            st.error("Bitte einen Kategorie-Namen eingeben.")
+                        elif any(c["name"].lower() == cn_clean.lower() for c in cats):
+                            st.error("Diese Kategorie existiert bereits.")
+                        elif c_dcid.strip() and not c_dcid.strip().isdigit():
+                            st.error("Die Discord-Rollen-ID darf nur aus Ziffern bestehen.")
+                        else:
+                            with edit(f"Kategorie „{cn_clean}“ erstellt") as d:
+                                d["settings"].setdefault("rank_categories", []).append({
+                                    "id": uid(),
+                                    "name": cn_clean,
+                                    "color": c_col,
+                                    "discord_role_id": c_dcid.strip(),
+                                    "is_high_team": bool(c_high),
+                                })
+                            st.rerun()
+
+            if not cats:
+                st.info("Noch keine Kategorien angelegt.")
+            else:
+                for c_obj in cats:
+                    assigned_cnt = sum(1 for r in custom_ranks if r.get("category_id") == c_obj["id"])
+                    ht_chip = chip("High-Team Bereich", "#A855F7") if c_obj.get("is_high_team") else chip("Standard-Team Bereich", "#3B82F6")
+                    dc_txt = f" · Discord Überrollen-ID: `{c_obj['discord_role_id']}`" if c_obj.get("discord_role_id") else " · Keine Discord-ID"
+
+                    col_ci, col_ce = st.columns([11, 1])
+                    with col_ci:
+                        show(f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'>"
+                             f"<div>{chip(c_obj['name'], c_obj.get('color', '#EF4444'))} "
+                             f"<span class='muted'>({assigned_cnt} Ränge zugeordnet{dc_txt})</span></div>"
+                             f"<div>{ht_chip}</div></div>")
+                    with col_ce:
+                        with st.popover("✏️"):
+                            st.markdown(f"### ✏️ Kategorie bearbeiten")
+                            ec_name = st.text_input("Kategorie-Name", value=c_obj["name"], key=f"ecn_{c_obj['id']}")
+                            ec_dcid = st.text_input("Discord Überrollen-ID", value=c_obj.get("discord_role_id", ""), key=f"ecdc_{c_obj['id']}").strip()
+                            ec_col = st.color_picker("Farbe", value=c_obj.get("color", "#EF4444"), key=f"eccol_{c_obj['id']}")
+                            ec_high = st.checkbox("Gehört zum High-Team", value=bool(c_obj.get("is_high_team", False)), key=f"echt_{c_obj['id']}")
+                            if st.button("💾 Speichern", key=f"ecsv_{c_obj['id']}", use_container_width=True):
+                                clean_cn = ec_name.strip()
+                                if not clean_cn:
+                                    st.error("Name darf nicht leer sein.")
+                                elif ec_dcid and not ec_dcid.isdigit():
+                                    st.error("Discord-ID darf nur aus Ziffern bestehen.")
+                                else:
+                                    with edit(f"Kategorie „{clean_cn}“ bearbeitet") as d:
+                                        for x in d["settings"]["rank_categories"]:
+                                            if x["id"] == c_obj["id"]:
+                                                x.update({
+                                                    "name": clean_cn,
+                                                    "discord_role_id": ec_dcid,
+                                                    "color": ec_col,
+                                                    "is_high_team": ec_high,
+                                                })
+                                    st.rerun()
+                            st.markdown("---")
+                            if st.button("🗑 Kategorie löschen", key=f"ecdel_{c_obj['id']}", use_container_width=True):
+                                with edit(f"Kategorie „{c_obj['name']}“ gelöscht") as d:
+                                    d["settings"]["rank_categories"] = [x for x in d["settings"]["rank_categories"] if x["id"] != c_obj["id"]]
+                                    for r in d["settings"].get("custom_ranks", []):
+                                        if r.get("category_id") == c_obj["id"]:
+                                            r["category_id"] = ""
+                                st.rerun()
+
     if is_owner:
         st.markdown("---")
-        st.subheader("🤖 Discord-Anbindung & Wartungsmodus (nur Alpha-Owner)")
-        st.caption("Webhook-URLs, Bot-Token und Wartungsmodus liegen in `discord_config.json`, nicht in den Teamdaten und nicht im Backup. "
+        st.subheader("🤖 Discord-Anbindung, Teamrollen & Wartungsmodus (nur Alpha-Owner)")
+        st.caption("Webhook-URLs, Bot-Token und Basis-Teamrollen liegen in `discord_config.json`, nicht in den Teamdaten und nicht im Backup. "
                    "Leere Felder nutzen den „Allgemein“-Webhook. Den Token kannst du auch als Umgebungsvariable `DISCORD_BOT_TOKEN` setzen.")
         cfg = dc_cfg()
         with st.form("discord_cfg_form"):
@@ -1486,23 +1890,41 @@ elif key == "settings":
             st.markdown("---")
             new_wh = {k: st.text_input(lbl, value=cfg["webhooks"].get(k, ""), type="password",
                                        placeholder="https://discord.com/api/webhooks/…", key=f"wh_input_{k}") for k, lbl in WEBHOOK_CHANNELS}
-            sync = st.checkbox("Discord-Rolle bei Rangänderung automatisch anpassen", value=bool(cfg["sync_roles"]))
+            st.markdown("---")
+            sync = st.checkbox("Discord-Rollen (Einzelrang, Kategorie-Überrolle & Teamrolle) bei Rangänderung automatisch synchronisieren", value=bool(cfg["sync_roles"]))
             c1, c2 = st.columns(2)
             gid = c1.text_input("Server-ID", value=cfg["guild_id"])
             tok = c2.text_input("Bot-Token" + (" (gespeichert, leer = behalten)" if cfg["bot_token"] else ""), type="password")
-            st.markdown("**Rang → Discord-Rollen-ID**")
-            rc = st.columns(3)
-            roles = {r: rc[i % 3].text_input(r, value=cfg["roles"].get(r, ""), key=f"dcr_{i}") for i, r in enumerate(RANKS)}
+
+            st.markdown("**Basis-Teamrollen & High-Team-Umschaltung (Discord-Rollen-IDs)**")
+            tr1, tr2, tr3 = st.columns(3)
+            t_base_id = tr1.text_input("Team-Überrubrik ID (@Team)", value=cfg.get("team_base_role_id", ""), placeholder="ID der @Team Überrubrik")
+            t_g_id = tr2.text_input("Teamrolle G ID (@Teamrolle G)", value=cfg.get("team_role_g_id", ""), placeholder="ID der @Teamrolle G")
+            t_high_id = tr3.text_input("High-Team-Rolle ID (@High-Team)", value=cfg.get("high_team_role_id", ""), placeholder="ID der @High-Team Rolle")
+            rep_base = st.checkbox(
+                "Bei High-Team-Kategorien die einfache Team-Überrubrik (@Team) automatisch entfernen",
+                value=bool(cfg.get("replace_team_with_high", True))
+            )
+
             save_wh = st.form_submit_button("💾 Einstellungen speichern", use_container_width=True)
         if save_wh:
             new_wh = {k: v.strip() for k, v in new_wh.items()}
-            roles = {k: v.strip() for k, v in roles.items()}
+            id_checks = [gid.strip(), t_base_id.strip(), t_g_id.strip(), t_high_id.strip()]
             if any(v and not DC_HOOK_RE.match(v) for v in new_wh.values()):
                 st.error("Ungültige Webhook-URL. Sie muss eine discord.com-Webhook-Adresse sein.")
-            elif any(v and not v.isdigit() for v in [gid.strip(), *roles.values()]):
+            elif any(v and not v.isdigit() for v in id_checks):
                 st.error("Server- und Rollen-IDs bestehen nur aus Ziffern.")
             else:
-                cfg.update(webhooks=new_wh, sync_roles=sync, guild_id=gid.strip(), roles=roles, maintenance_mode=maintenance_toggle)
+                cfg.update(
+                    webhooks=new_wh,
+                    sync_roles=sync,
+                    guild_id=gid.strip(),
+                    maintenance_mode=maintenance_toggle,
+                    team_base_role_id=t_base_id.strip(),
+                    team_role_g_id=t_g_id.strip(),
+                    high_team_role_id=t_high_id.strip(),
+                    replace_team_with_high=rep_base,
+                )
                 if tok.strip(): cfg["bot_token"] = tok.strip()
                 dc_save(cfg)
                 st.success("Gespeichert.")
