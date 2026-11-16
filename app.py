@@ -288,11 +288,10 @@ def dc_cfg():
         "guild_id": "",
         "roles": {},
         "sync_roles": False,
-        "maintenance_mode": False,
-        "team_base_role_id": "",     # @Team (Überrubrik für normale Teammitglieder)
-        "team_role_g_id": "",        # @Teamrolle G (für alle mit aktivierter Teamrolle)
-        "high_team_role_id": "",     # @High-Team (für High-Team Kategorien, z.B. ab Administrator)
-        "replace_team_with_high": True,  # Bei High-Team einfache Team-Überrubrik entfernen
+        "team_base_role_id": "",
+        "team_role_g_id": "",
+        "high_team_role_id": "",
+        "replace_team_with_high": True,
     }
     try:
         with open(DC_CFG_FILE, encoding="utf-8") as f: cfg.update(json.load(f))
@@ -441,7 +440,6 @@ def compute_discord_role_changes(old_rank_name, new_rank_name, cfg=None, d=None)
         if high_team_id:
             to_remove.append(high_team_id)
 
-    # Nur gültige Ziffern-IDs behalten & Überschneidungen bereinigen
     add_clean = list(dict.fromkeys(x for x in to_add if str(x).isdigit()))
     rem_clean = list(dict.fromkeys(x for x in to_remove if str(x).isdigit() and x not in add_clean))
     return add_clean, rem_clean
@@ -775,15 +773,9 @@ if not any(u.get("is_owner") for u in data["users"]):
     st.rerun()
 
 if not ss.user:
-    cfg_maintenance = dc_cfg()
-    is_maintenance = bool(cfg_maintenance.get("maintenance_mode", False))
-
     c = st.columns([1, 1.2, 1])[1]
     c.markdown(f"<div style='text-align:center'>{logo_html(340) or '<h2>🐺 WOLF LIFE</h2>'}"
                "<div class='tagline'>Team Management Suite</div></div>", unsafe_allow_html=True)
-
-    if is_maintenance:
-        c.warning("⚠️ **Wartungsmodus aktiv!** Die Webseite befindet sich aktuell in Wartungsarbeiten. Nur **Alpha-Owner** können sich derzeit anmelden.")
 
     with c.form("login"):
         n = st.text_input("Benutzername")
@@ -794,13 +786,10 @@ if not ss.user:
             else:
                 u = authenticate(n, p)
                 if u:
-                    if is_maintenance and not bool(u.get("is_owner")):
-                        st.error("🚫 Wartungsmodus aktiv: Nur Alpha-Owner dürfen sich aktuell anmelden.")
-                    else:
-                        ss.user = {"username": u["username"], "is_admin": bool(u.get("is_admin")),
-                                   "is_owner": bool(u.get("is_owner")),
-                                   "permissions": u.get("permissions") or {}}
-                        st.rerun()
+                    ss.user = {"username": u["username"], "is_admin": bool(u.get("is_admin")),
+                               "is_owner": bool(u.get("is_owner")),
+                               "permissions": u.get("permissions") or {}}
+                    st.rerun()
                 else:
                     register_fail(n)
                     st.error("Falscher Benutzername oder falsches Passwort!")
@@ -833,8 +822,6 @@ def mode_of(key):
 
 st.sidebar.markdown(f"{logo_html(230) or '<h2>🐺 WOLF LIFE</h2>'}<div class='tagline' style='text-align:center;font-size:11px;margin:4px 0 14px'>Los Santos · Team Suite</div>",
                     unsafe_allow_html=True)
-if dc_cfg().get("maintenance_mode", False):
-    st.sidebar.warning("🚧 Wartungsmodus ist AKTIV")
 
 visible = [(k, l) for k, l in TABS if mode_of(k) != "hidden"]
 if ss.get("page") not in [k for k, _ in visible]: ss.page = visible[0][0]
@@ -1878,16 +1865,11 @@ elif key == "settings":
 
     if is_owner:
         st.markdown("---")
-        st.subheader("🤖 Discord-Anbindung, Teamrollen & Wartungsmodus (nur Alpha-Owner)")
+        st.subheader("🤖 Discord-Anbindung & Teamrollen (nur Alpha-Owner)")
         st.caption("Webhook-URLs, Bot-Token und Basis-Teamrollen liegen in `discord_config.json`, nicht in den Teamdaten und nicht im Backup. "
                    "Leere Felder nutzen den „Allgemein“-Webhook. Den Token kannst du auch als Umgebungsvariable `DISCORD_BOT_TOKEN` setzen.")
         cfg = dc_cfg()
         with st.form("discord_cfg_form"):
-            maintenance_toggle = st.checkbox(
-                "🚧 Wartungsmodus aktivieren (Webseite für normale Nutzer sperren – nur Alpha-Owner können sich anmelden)",
-                value=bool(cfg.get("maintenance_mode", False))
-            )
-            st.markdown("---")
             new_wh = {k: st.text_input(lbl, value=cfg["webhooks"].get(k, ""), type="password",
                                        placeholder="https://discord.com/api/webhooks/…", key=f"wh_input_{k}") for k, lbl in WEBHOOK_CHANNELS}
             st.markdown("---")
@@ -1919,7 +1901,6 @@ elif key == "settings":
                     webhooks=new_wh,
                     sync_roles=sync,
                     guild_id=gid.strip(),
-                    maintenance_mode=maintenance_toggle,
                     team_base_role_id=t_base_id.strip(),
                     team_role_g_id=t_g_id.strip(),
                     high_team_role_id=t_high_id.strip(),
@@ -1954,7 +1935,7 @@ elif key == "accounts":
             un = st.text_input("Benutzername")
             up = st.text_input(f"Start-Passwort (min. {MIN_PW} Zeichen)", type="password")
             ua = st.checkbox("Administrator (voller Zugriff)")
-            uo = st.checkbox("Alpha-Owner (Zugriff auf Discord-Einstellungen & Wartungsmodus)") if is_owner else False
+            uo = st.checkbox("Alpha-Owner (Zugriff auf Discord-Einstellungen)") if is_owner else False
             cols = st.columns(3)
             perms = {k: cols[i % 3].selectbox(l, perm_opts(k), format_func=lambda x: PERM_LABELS[x], index=1, key=f"p_{k}")
                      for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings")}
@@ -1993,7 +1974,7 @@ elif key == "accounts":
             is_self = u["username"] == user["username"]
             adm = st.checkbox("Administrator (voller Zugriff)", value=bool(u.get("is_admin")),
                               disabled=is_self, key=f"adm_{u['username']}")
-            ow = (st.checkbox("Alpha-Owner (übergeordnet, Zugriff auf Discord-Einstellungen & Wartungsmodus)", value=bool(u.get("is_owner")),
+            ow = (st.checkbox("Alpha-Owner (übergeordnet, Zugriff auf Discord-Einstellungen)", value=bool(u.get("is_owner")),
                               disabled=is_self, key=f"own_{u['username']}") if is_owner else bool(u.get("is_owner")))
             lm_opts = ["–"] + member_names
             lm = st.selectbox("Verknüpftes Teammitglied (Rang-Rechte, eigene Abmeldung)", lm_opts,
