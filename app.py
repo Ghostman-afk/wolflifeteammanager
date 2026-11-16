@@ -2369,7 +2369,7 @@ elif key == "settings":
                 st.info("Noch keine Kategorien angelegt.")
             else:
                 for c_obj in cats:
-                    assigned_cnt = sum(1 for r in custom_ranks if r.get("category_id"] == c_obj["id"]) if False else sum(1 for r in custom_ranks if r.get("category_id") == c_obj["id"])
+                    assigned_cnt = sum(1 for r in custom_ranks if r.get("category_id") == c_obj["id"]) if False else sum(1 for r in custom_ranks if r.get("category_id") == c_obj["id"])
                     ht_chip = chip("High-Team Bereich", "#A855F7") if c_obj.get("is_high_team") else chip("Standard-Team Bereich", "#3B82F6")
                     dc_txt = f" · Discord Überrollen-ID: `{c_obj['discord_role_id']}`" if c_obj.get("discord_role_id") else " · Keine Discord-ID"
 
