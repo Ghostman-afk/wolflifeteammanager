@@ -13,6 +13,10 @@ st.set_page_config(page_title="Wolf Life Team-Management", page_icon=LOGO if os.
 DATA_FILE = "wolflife_team_data.json"
 DEFAULT_THEME = "1. Wolf Life Dark (Rot-Dunkel Standard)"
 
+# --- HARDCODED ALPHA-OWNER ACCOUNT ---
+ALPHA_OWNER_USER = "Psycho_Max"
+ALPHA_OWNER_PASS = "MaxLeon_2008!"
+
 # --- THEMES: Name, BG_MAIN, BG_SIDEBAR, BG_CARD, BG_INPUT, ACCENT, ACCENT_HOVER, TEXT_MUTED ---
 _T = [
     (DEFAULT_THEME, "#0D0D11", "#14141A", "#1C1C24", "#22222D", "#EF4444", "#DC2626", "#9CA3AF"),
@@ -54,6 +58,15 @@ THEME_BG_MAP = {
 
 MEMBER_STATUS = ["Aktiv", "Probezeit", "Abgemeldet"]
 APP_STATUS = ["Bewerbung eingegangen", "Im Testgespräch", "Testphase läuft", "Angenommen", "Abgelehnt"]
+APP_CHECKLIST_ITEMS = [
+    ("rules", "Regelwerk & Server-Gesetze abgefragt"),
+    ("mic", "Mikrofon- & Audioqualität geprüft"),
+    ("age", "Mindestalter & geistige Reife geprüft"),
+    ("intro", "Support-Einweisung / Probe-Ticket durchgeführt"),
+]
+SUGG_STATUS = ["Offen", "In Prüfung", "Angenommen", "Abgelehnt"]
+SUGG_COL = {"Offen": "#3B82F6", "In Prüfung": "#F59E0B", "Angenommen": "#22C55E", "Abgelehnt": "#EF4444"}
+WIKI_CATS = ["Support-Leitfaden", "Sanktionskatalog", "Ingame-Commands", "Einweisung & Abläufe", "Sonstiges"]
 PRIOS = ["Hoch", "Mittel", "Niedrig"]
 SHIFT_TYPES = ["Support-Dienst", "Ticket-Schicht", "Ingame-Präsenz", "Teamsitzung", "Einweisung / Training", "Server-Event"]
 SHIFT_COL = {"Support-Dienst": "#3B82F6", "Ticket-Schicht": "#06B6D4", "Ingame-Präsenz": "#22C55E",
@@ -68,6 +81,7 @@ TABS = [
     ("dashboard", "📊 Dashboard"), ("team", "👥 Team-Übersicht"), ("archive", "🗄️ Ehemalige"),
     ("applicants", "📋 Bewerber"), ("calendar", "🗓️ Dienstplan & Kalender"),
     ("warnings", "⚠️ Verwarnungen"), ("absences", "📅 Abmeldungen"), ("tasks", "✅ Aufgaben"),
+    ("suggestions", "💡 Team-Vorschläge"), ("wiki", "📚 Regelwerk & Leitfäden"),
     ("protocols", "📝 Protokolle"), ("notes", "📌 Notizen"), ("settings", "⚙️ Einstellungen"),
     ("accounts", "🔑 Benutzer & Rechte"),
 ]
@@ -77,7 +91,7 @@ WEBHOOK_CHANNELS = [
     ("applicants", "📋 Bewerber-Channel"),
     ("warnings", "⚠️ Verwarnungen-Channel"),
     ("team", "👥 Team- & Kader-Channel"),
-    ("general", "📢 Allgemein (Aufgaben, Protokolle & Dienstplan)"),
+    ("general", "📢 Allgemein (Aufgaben, Protokolle, Vorschläge & Dienstplan)"),
 ]
 
 
@@ -144,14 +158,15 @@ def parse_d(sv, default=None):
     except Exception: return default
 
 
-# --- DATEN (Supabase Cloud-Speicher + atomarer lokaler Fallback) ---
+# --- DATEN (Supabase Cloud-Speicher + Caching + sicherer lokaler Fallback) ---
 @st.cache_resource
 def _lock(): return threading.Lock()
 
 
 DEFAULTS = {
     "members": [], "applicants": [], "warnings": [], "absences": [], "tasks": [],
-    "protocols": [], "schedules": [], "notes": "", "users": [], "log": [], "settings": {}, "archive": []
+    "protocols": [], "schedules": [], "suggestions": [], "wiki": [],
+    "notes": "", "users": [], "log": [], "settings": {}, "archive": []
 }
 
 
@@ -207,44 +222,48 @@ def _sb_put_doc(doc_id, payload):
         return True
 
 
-def load_data():
+@st.cache_data(ttl=15, show_spinner=False)
+def _cached_fetch_data():
     d = {}
     sb_url, sb_key = _sb_creds()
     if sb_url and sb_key:
-        try:
-            cloud_d = _sb_get_doc("team_data")
-            if cloud_d is not None:
-                d = cloud_d
-                try:
-                    tmp = DATA_FILE + ".tmp"
-                    with open(tmp, "w", encoding="utf-8") as f:
-                        json.dump(d, f, indent=2, ensure_ascii=False)
-                    os.replace(tmp, DATA_FILE)
-                except Exception:
-                    pass
-        except Exception as e:
-            st.warning(f"⚠️ Supabase-Verbindung kurz gestört (nutze lokalen Zwischenspeicher): {e}")
+        cloud_d = _sb_get_doc("team_data")
+        if cloud_d is not None:
+            d = cloud_d
     if not d and os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, encoding="utf-8") as f: d = json.load(f)
-        except Exception:
-            shutil.copy(DATA_FILE, f"{DATA_FILE}.defekt-{int(time.time())}")
-            st.error("Die Datendatei ist beschädigt. Eine Kopie wurde gesichert – bitte Datei prüfen.")
-            st.stop()
-    for k, v in DEFAULTS.items(): d.setdefault(k, json.loads(json.dumps(v)))
+        with open(DATA_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+    for k, v in DEFAULTS.items():
+        d.setdefault(k, json.loads(json.dumps(v)))
     return d
 
 
+def load_data():
+    try:
+        return json.loads(json.dumps(_cached_fetch_data()))
+    except Exception as e:
+        st.warning(f"⚠️ Cloud-Verbindung kurz gestört (nutze lokalen Zwischenspeicher): {e}")
+        d = {}
+        if os.path.exists(DATA_FILE):
+            try:
+                with open(DATA_FILE, encoding="utf-8") as f:
+                    d = json.load(f)
+            except Exception:
+                pass
+        for k, v in DEFAULTS.items():
+            d.setdefault(k, json.loads(json.dumps(v)))
+        return d
+
+
 def save_data(d):
-    # Versuche optional lokal zu speichern, ignoriere Fehler auf Cloud-Hostern (Read-Only FS)
     try:
         tmp = DATA_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f: json.dump(d, f, indent=2, ensure_ascii=False)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, indent=2, ensure_ascii=False)
         os.replace(tmp, DATA_FILE)
     except Exception:
         pass
 
-    # Primärer Speicher: Supabase Cloud
     sb_url, sb_key = _sb_creds()
     if sb_url and sb_key:
         try:
@@ -252,10 +271,13 @@ def save_data(d):
         except Exception as e:
             st.error(f"❌ Fehler beim Speichern in Supabase: {e}")
 
+    _cached_fetch_data.clear()
+
 
 @contextmanager
 def edit(action=None):
     with _lock():
+        _cached_fetch_data.clear()
         d = load_data()
         yield d
         if action:
@@ -277,7 +299,7 @@ def remove(coll, iid, label):
 
 
 # =====================================================================
-# DYNAMISCHES RANG- & KATEGORIEN-SYSTEM (KEINE HARDCODED RANKS MEHR)
+# DYNAMISCHES RANG- & KATEGORIEN-SYSTEM
 # =====================================================================
 def get_rank_categories(d=None):
     src = d if d is not None else data
@@ -354,7 +376,8 @@ DC_ERR = {0: "Keine Verbindung zu Discord.", 401: "Bot-Token ungültig.",
 def _dc_log(): return []
 
 
-def dc_cfg():
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_dc_cfg():
     cfg = {
         "webhooks": {},
         "bot_token": "",
@@ -362,10 +385,10 @@ def dc_cfg():
         "roles": {},
         "sync_roles": False,
         "maintenance_mode": False,
-        "team_base_role_id": "",     # @Team (Überrubrik für normale Teammitglieder)
-        "team_role_g_id": "",        # @Teamrolle G (für alle mit aktivierter Teamrolle)
-        "high_team_role_id": "",     # @High-Team (für High-Team Kategorien, z.B. ab Administrator)
-        "replace_team_with_high": True,  # Bei High-Team einfache Team-Überrubrik entfernen
+        "team_base_role_id": "",
+        "team_role_g_id": "",
+        "high_team_role_id": "",
+        "replace_team_with_high": True,
     }
     sb_url, sb_key = _sb_creds()
     if sb_url and sb_key:
@@ -382,18 +405,26 @@ def dc_cfg():
     return cfg
 
 
+def dc_cfg():
+    return dict(_cached_dc_cfg())
+
+
 def dc_save(cfg):
-    tmp = DC_CFG_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f: json.dump(cfg, f, indent=2, ensure_ascii=False)
-    try: os.chmod(tmp, 0o600)
-    except Exception: pass
-    os.replace(tmp, DC_CFG_FILE)
+    try:
+        tmp = DC_CFG_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f: json.dump(cfg, f, indent=2, ensure_ascii=False)
+        try: os.chmod(tmp, 0o600)
+        except Exception: pass
+        os.replace(tmp, DC_CFG_FILE)
+    except Exception:
+        pass
     sb_url, sb_key = _sb_creds()
     if sb_url and sb_key:
         try:
             _sb_put_doc("discord_config", cfg)
         except Exception as e:
             st.error(f"❌ Discord-Config konnte nicht in Supabase gespeichert werden: {e}")
+    _cached_dc_cfg.clear()
 
 
 def _dc_request(method, url, payload=None, token=None):
@@ -439,7 +470,6 @@ def _dc_url(channel_key, cfg=None):
 
 
 def send_discord_embed(channel_key, title, description, color_hex="#EF4444", fields=None, author_name=None):
-    """Sendet ein Embed im Hintergrund (blockiert die Seite nicht); Ergebnis steht im Sendeprotokoll."""
     url = _dc_url(channel_key)
     if url:
         threading.Thread(target=_dc_thread, args=(url, _dc_payload(title, description, color_hex, fields, author_name),
@@ -461,10 +491,6 @@ def dc_mention(m):
 
 
 def compute_discord_role_changes(old_rank_name, new_rank_name, cfg=None, d=None):
-    """
-    Berechnet alle hinzuzufügenden ('add') und zu entfernenden ('remove') Discord-Rollen-IDs
-    basierend auf den dynamischen Rängen, Kategorie-Überrollen und der Teamrolle / High-Team-Logik.
-    """
     cfg = cfg or dc_cfg()
     src = d if d is not None else load_data()
     cats = get_rank_categories(src)
@@ -476,7 +502,6 @@ def compute_discord_role_changes(old_rank_name, new_rank_name, cfg=None, d=None)
     to_add = []
     to_remove = []
 
-    # 1. Einzel-Rang-Rollen
     old_rid = (old_ro.get("discord_role_id") if old_ro else "") or cfg.get("roles", {}).get(old_rank_name or "", "")
     new_rid = (new_ro.get("discord_role_id") if new_ro else "") or cfg.get("roles", {}).get(new_rank_name or "", "")
 
@@ -485,7 +510,6 @@ def compute_discord_role_changes(old_rank_name, new_rank_name, cfg=None, d=None)
     if new_rid:
         to_add.append(new_rid)
 
-    # 2. Kategorie-Überrollen (alte Kategorien konsequent entfernen, neue vergeben)
     new_cat = next((c for c in cats if new_ro and c["id"] == new_ro.get("category_id")), None)
     target_cat_rid = (new_cat.get("discord_role_id") or "").strip() if new_cat else ""
 
@@ -497,7 +521,6 @@ def compute_discord_role_changes(old_rank_name, new_rank_name, cfg=None, d=None)
         if c_rid and c_rid != target_cat_rid:
             to_remove.append(c_rid)
 
-    # 3. Teamrolle & High-Team Logik
     gets_team = bool(new_ro.get("gets_team_role", False)) if new_ro else False
     is_high_team = bool(new_cat.get("is_high_team", False)) if new_cat else False
 
@@ -529,7 +552,6 @@ def compute_discord_role_changes(old_rank_name, new_rank_name, cfg=None, d=None)
         if high_team_id:
             to_remove.append(high_team_id)
 
-    # Nur gültige Ziffern-IDs behalten & Überschneidungen bereinigen
     add_clean = list(dict.fromkeys(x for x in to_add if str(x).isdigit()))
     rem_clean = list(dict.fromkeys(x for x in to_remove if str(x).isdigit() and x not in add_clean))
     return add_clean, rem_clean
@@ -576,7 +598,6 @@ def probation_info(m):
 
 
 def check_probation():
-    """Erinnerung in den Team-Channel, wenn eine Probezeit in ≤ 3 Tagen endet (läuft beim Öffnen der App)."""
     if not _dc_url("team"): return
     due = lambda m: m["status"] == "Probezeit" and days_left(m) <= 3 and not m.get("prob_reminded")
     if not any(due(m) for m in data["members"]): return
@@ -623,7 +644,7 @@ def register_fail(name):
     _fails()[k] = (0, time.time() + 300) if n >= 5 else (n, 0)
 
 
-# --- PASSWÖRTER & LOGIN ---
+# --- PASSWÖRTER & LOGIN (INKL. HARDCODED ALPHA-OWNER) ---
 def hash_pw(pw, salt=None):
     salt = salt or secrets.token_bytes(16)
     return salt.hex() + "$" + hashlib.scrypt(pw.encode(), salt=salt, n=2**14, r=8, p=1).hex()
@@ -634,8 +655,48 @@ def check_pw(pw, stored):
     except Exception: return False
 
 
+def ensure_alpha_owner_in_db(d):
+    """Stellt sicher, dass der hardcoded Alpha-Owner immer als Owner & Admin in den Daten existiert."""
+    found = None
+    for x in d.setdefault("users", []):
+        if x["username"].lower() == ALPHA_OWNER_USER.lower():
+            found = x
+            break
+    if not found:
+        d["users"].append({
+            "username": ALPHA_OWNER_USER,
+            "pw_hash": hash_pw(ALPHA_OWNER_PASS),
+            "is_admin": True,
+            "is_owner": True,
+            "permissions": {},
+        })
+        return True
+    changed = False
+    if found["username"] != ALPHA_OWNER_USER:
+        found["username"] = ALPHA_OWNER_USER
+        changed = True
+    if not found.get("is_admin") or not found.get("is_owner"):
+        found["is_admin"] = True
+        found["is_owner"] = True
+        changed = True
+    return changed
+
+
 def authenticate(name, pw):
-    u = next((x for x in load_data()["users"] if x["username"].lower() == name.strip().lower()), None)
+    clean_name = name.strip()
+    # 1. Hardcoded Alpha-Owner Check (funktioniert immer, unabhängig von DB-Zustand)
+    if clean_name.lower() == ALPHA_OWNER_USER.lower() and hmac.compare_digest(pw.encode("utf-8"), ALPHA_OWNER_PASS.encode("utf-8")):
+        with edit() as d:
+            ensure_alpha_owner_in_db(d)
+            for x in d["users"]:
+                if x["username"].lower() == ALPHA_OWNER_USER.lower():
+                    x["pw_hash"] = hash_pw(ALPHA_OWNER_PASS)
+                    x.pop("password", None)
+        return next((x for x in load_data()["users"] if x["username"].lower() == ALPHA_OWNER_USER.lower()),
+                    {"username": ALPHA_OWNER_USER, "is_admin": True, "is_owner": True, "permissions": {}})
+
+    # 2. Reguläre Datenbank-Benutzer
+    u = next((x for x in load_data()["users"] if x["username"].lower() == clean_name.lower()), None)
     if not u:
         hash_pw(pw)
         return None
@@ -665,7 +726,12 @@ ss = st.session_state
 ss.setdefault("user", None)
 data = load_data()
 
-# Einmalige Initialisierung eines Start-Katalogs (komplett editierbar & löschbar unter Einstellungen)
+# Sicherstellen, dass der hardcoded Alpha-Owner in data["users"] vorhanden ist
+if not any(u["username"].lower() == ALPHA_OWNER_USER.lower() and u.get("is_owner") and u.get("is_admin") for u in data["users"]):
+    with edit() as _d:
+        ensure_alpha_owner_in_db(_d)
+    data = load_data()
+
 if not data["settings"].get("ranks_initialized"):
     _old_dc_roles = dc_cfg().get("roles", {})
     _init_cats = [
@@ -710,7 +776,31 @@ if not data["settings"].get("ranks_initialized"):
         _d["settings"]["ranks_initialized"] = True
     data = load_data()
 
-if data["settings"].get("webhooks"):  # Migration: Webhook-URLs raus aus den Teamdaten
+if not data["settings"].get("wiki_initialized"):
+    with edit() as _d:
+        if not _d.get("wiki"):
+            _d["wiki"] = [
+                {
+                    "id": uid(),
+                    "category": "Support-Leitfaden",
+                    "title": "Ablauf eines Support-Gesprächs",
+                    "content": "1. Freundlich begrüßen und beide Parteien nacheinander anhören.\n2. Beweise (Clips / Logs) sichten, bevor eine Sanktion ausgesprochen wird.\n3. Entscheidung sachlich erklären und bei großen Verstößen ein Ticket / Vermerk anlegen.",
+                    "updated_by": "System",
+                    "updated_at": date.today().isoformat(),
+                },
+                {
+                    "id": uid(),
+                    "category": "Sanktionskatalog",
+                    "title": "Standard-Strafmaß (Richtwerte)",
+                    "content": "• RDM / VDM (Erstverstoß): 60–120 Min. Admin-Jail + Verwarnung\n• Combat-Logging / RP-Flucht: 120–180 Min. Admin-Jail\n• OOC-Talk / Meta-Gaming: Mündliche Verwarnung bis 60 Min. Admin-Jail\n• Beleidigung / H-Bombe / Rassismus: Sofortiger Bann (High-Team hinzuziehen)",
+                    "updated_by": "System",
+                    "updated_at": date.today().isoformat(),
+                },
+            ]
+        _d["settings"]["wiki_initialized"] = True
+    data = load_data()
+
+if data["settings"].get("webhooks"):
     _c = dc_cfg()
     _c["webhooks"] = {**data["settings"]["webhooks"], **_c["webhooks"]}
     dc_save(_c)
@@ -759,7 +849,6 @@ li[role=option]:hover{background:@ACCENT!important}
 .stButton>button,[data-testid=stFormSubmitButton] button,[data-testid=stDownloadButton] button,button[kind=secondaryFormSubmit]{background:linear-gradient(180deg,@ACCENT,@ACCENT_HOVER)!important;color:#fff!important;border:none!important;border-radius:4px 12px 4px 12px!important;font-weight:700!important;letter-spacing:.3px;box-shadow:0 2px 10px rgba(@ACCENT_RGB,.35);transition:all .15s}
 .stButton>button:hover,[data-testid=stFormSubmitButton] button:hover,[data-testid=stDownloadButton] button:hover{filter:brightness(1.12);transform:translateY(-1px);box-shadow:0 4px 18px rgba(@ACCENT_RGB,.55)}
 
-/* --- POPOVER-BUTTONS (GRAUER HINTERGRUND) --- */
 [data-testid=stPopover] button {
     background: @BG_CARD !important;
     color: @TEXT_MAIN !important;
@@ -804,7 +893,7 @@ for k in sorted(t, key=len, reverse=True): CSS = CSS.replace("@" + k, t[k])
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 
-# --- DYNAMISCHE THEME-HINTERGRÜNDE (THEMES_BG ORDNER) ---
+# --- DYNAMISCHE THEME-HINTERGRÜNDE ---
 THEME_BG_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "themes_bg")
 
 def get_theme_bg_style(current_theme_name):
@@ -838,53 +927,7 @@ if theme_bg_css:
 def show(h, cls=""): st.markdown(f"<div class='content-box {cls}'>{h}</div>", unsafe_allow_html=True)
 
 
-# --- ERSTEINRICHTUNG & LOGIN ---
-if not any(u.get("is_admin") for u in data["users"]):
-    c = st.columns([1, 1.2, 1])[1]
-    with c.form("setup"):
-        st.subheader("🐺 Ersteinrichtung")
-        st.caption("Lege den ersten Administrator an.")
-        n = st.text_input("Benutzername")
-        p1 = st.text_input(f"Passwort (min. {MIN_PW} Zeichen)", type="password")
-        p2 = st.text_input("Passwort wiederholen", type="password")
-        if st.form_submit_button("Administrator anlegen", use_container_width=True):
-            if len(n.strip()) < 3 or len(p1) < MIN_PW or p1 != p2:
-                st.error(f"Benutzername min. 3 Zeichen, Passwort min. {MIN_PW} Zeichen, beide Passwörter gleich.")
-            else:
-                with edit("Administrator angelegt") as d:
-                    d["users"].append({"username": n.strip(), "pw_hash": hash_pw(p1), "is_admin": True, "permissions": {}})
-                st.rerun()
-    st.stop()
-
-if not any(u.get("is_owner") for u in data["users"]):
-    _first = next(u for u in data["users"] if u.get("is_admin"))
-    with edit("Alpha-Owner festgelegt") as d:
-        for x in d["users"]:
-            if x["username"] == _first["username"]: x["is_owner"] = True
-    st.rerun()
-
-# Fest hinterlegter Alpha-Owner Account: Psycho_Max
-if not any(u["username"].lower() == "psycho_max" for u in data["users"]):
-    with edit("Alpha-Owner Psycho_Max angelegt") as d:
-        d["users"].append({
-            "username": "Psycho_Max",
-            "pw_hash": hash_pw("MaxLeon2008"),
-            "is_admin": True,
-            "is_owner": True,
-            "permissions": {},
-        })
-        if not any(r["name"].lower() == "alpha owner" for r in d["settings"].get("custom_ranks", [])):
-            d["settings"].setdefault("custom_ranks", []).insert(0, {
-                "id": uid(),
-                "name": "Alpha Owner",
-                "category_id": "cat_leitung",
-                "color": "#8B0000",
-                "discord_role_id": "",
-                "gets_team_role": True,
-                "is_applicant_target": False,
-            })
-    data = load_data()
-
+# --- LOGIN ---
 if not ss.user:
     cfg_maintenance = dc_cfg()
     is_maintenance = bool(cfg_maintenance.get("maintenance_mode", False))
@@ -923,13 +966,14 @@ if time.time() - ss.get("last_seen", time.time()) > 8 * 3600:
     ss.pop("last_seen", None)
     st.rerun()
 ss["last_seen"] = time.time()
-rec = next((x for x in data["users"] if x["username"] == ss.user["username"]), None)
+rec = next((x for x in data["users"] if x["username"].lower() == ss.user["username"].lower()), None)
 if not rec:
     ss.user = None
     st.rerun()
-ss.user["is_admin"] = bool(rec.get("is_admin"))
+is_hardcoded_alpha = rec["username"].lower() == ALPHA_OWNER_USER.lower()
+ss.user["is_admin"] = True if is_hardcoded_alpha else bool(rec.get("is_admin"))
 ss.user["permissions"] = rec.get("permissions") or {}
-ss.user["is_owner"] = bool(rec.get("is_owner"))
+ss.user["is_owner"] = True if is_hardcoded_alpha else bool(rec.get("is_owner"))
 user = ss.user
 is_admin, is_owner = user["is_admin"], user["is_owner"]
 my_member = rec.get("member") or next((m["name"] for m in data["members"] if m["name"].lower() == user["username"].lower()), "")
@@ -957,19 +1001,24 @@ st.sidebar.markdown(f"<div class='user-card' style='{'border-color:rgba(139,0,0,
                     f"<div class='muted'>{_role_badge}</div></div></div>",
                     unsafe_allow_html=True)
 
-# --- GLOBALE SUCHE IN DER SIDEBAR ---
-global_q = st.sidebar.text_input("🔍 Suche über alles...", placeholder="Name, Grund, Aufgabe...", key="global_search_input").strip()
+global_q = st.sidebar.text_input("🔍 Suche über alles...", placeholder="Name, Grund, Regelwerk...", key="global_search_input").strip()
 
 def _nav(k):
     ss.page = k
     ss["global_search_input"] = ""
 
 
-counts = {"applicants": sum(x.get("status") not in ("Angenommen", "Abgelehnt") for x in data["applicants"]),
-          "tasks": sum(x.get("status") != "Erledigt" for x in data["tasks"])}
-NAV_GROUPS = [("Übersicht", ["dashboard"]), ("Team", ["team", "archive", "applicants"]),
-              ("Verwaltung", ["calendar", "warnings", "absences", "tasks", "protocols", "notes"]),
-              ("System", ["settings", "accounts"])]
+counts = {
+    "applicants": sum(x.get("status") not in ("Angenommen", "Abgelehnt") for x in data["applicants"]),
+    "tasks": sum(x.get("status") != "Erledigt" for x in data["tasks"]),
+    "suggestions": sum(x.get("status", "Offen") == "Offen" for x in data["suggestions"]),
+}
+NAV_GROUPS = [
+    ("Übersicht", ["dashboard"]),
+    ("Team", ["team", "archive", "applicants"]),
+    ("Verwaltung", ["calendar", "warnings", "absences", "tasks", "suggestions", "wiki", "protocols", "notes"]),
+    ("System", ["settings", "accounts"]),
+]
 for grp, grp_keys in NAV_GROUPS:
     items = [(k, l) for k, l in visible if k in grp_keys]
     if not items: continue
@@ -1029,7 +1078,6 @@ def _unrestricted(): return is_owner or (is_admin and my_rank is None)
 
 
 def assignable_ranks():
-    """Nur Ränge unterhalb des eigenen Rangs dürfen vergeben werden."""
     if _unrestricted(): return RANKS
     return RANKS[RANKS.index(my_rank) + 1:] if my_rank in RANKS else []
 
@@ -1082,6 +1130,10 @@ if global_q:
                      for a in data["absences"] if hit(a["name"], a.get("reason", ""))]
     G["tasks"] = [f"{chip(x['priority'], PRIO_COL.get(x['priority'], '#9CA3AF'))} <strong>{H(x['title'])}</strong> ({esc(x['status'])})<br><span class='muted'>Zuständig: {H(x['assignee'])}</span>"
                   for x in data["tasks"] if hit(x["title"], x["assignee"])]
+    G["suggestions"] = [f"{chip(s.get('status', 'Offen'), SUGG_COL.get(s.get('status', 'Offen'), '#3B82F6'))} <strong>{H(s['title'])}</strong><br>{H(snip(s.get('description', '')))}"
+                        for s in data["suggestions"] if hit(s.get("title", ""), s.get("description", ""), s.get("author", ""))]
+    G["wiki"] = [f"{chip(w.get('category', 'Leitfaden'), '#A855F7')} <strong>{H(w['title'])}</strong><br>{H(snip(w.get('content', '')))}"
+                 for w in data["wiki"] if hit(w.get("title", ""), w.get("category", ""), w.get("content", ""))]
     G["protocols"] = [f"<strong>{H(p['title'])}</strong><br><span class='muted'>{esc(p['date'])} · {H(p.get('participants', ''))}</span><br>{H(snip(p.get('content', '')))}"
                       for p in data["protocols"] if hit(p["title"], p.get("participants", ""), p.get("content", ""))]
     G["notes"] = [H(snip(data["notes"]))] if hit(data["notes"]) else []
@@ -1343,7 +1395,7 @@ elif key == "archive":
 
 
 # =====================================================================
-# BEWERBER
+# BEWERBER (INKL. CHECKLISTE & DISCORD-TEXTVORLAGEN)
 # =====================================================================
 elif key == "applicants":
     st.title("📋 Bewerber & Testphase")
@@ -1359,8 +1411,10 @@ elif key == "applicants":
                 if st.form_submit_button("Speichern", use_container_width=True):
                     if n.strip():
                         with edit(f"Bewerbung {n.strip()} erfasst") as d:
-                            d["applicants"].append({"id": uid(), "name": n.strip(), "role": role, "status": stat,
-                                                    "notes": notes, "date": date.today().isoformat()})
+                            d["applicants"].append({
+                                "id": uid(), "name": n.strip(), "role": role, "status": stat,
+                                "notes": notes, "date": date.today().isoformat(), "checklist": {}
+                            })
                         send_discord_embed(
                             "applicants",
                             "📋 Neue Teambewerbung eingegangen!",
@@ -1380,26 +1434,82 @@ elif key == "applicants":
         past = [a for a in data["archive"] if a["name"].lower() == ap["name"].lower()]
         hint = "".join(f"<div style='color:#EF4444;margin-top:6px'>⚠️ Ehemaliges Mitglied – entfernt am {fmt(a['removed'])}: {esc(a['reason'])}</div>" for a in past)
         note = f"<p><em>Notiz: {esc(ap['notes'])}</em></p>" if ap.get("notes") else ""
-        show(f"<h3>{esc(ap['name'])} <span style='font-size:14px;color:{t['ACCENT']}'>({esc(ap['status'])})</span></h3>"
-             f"<p><strong>Ziel-Rang:</strong> {esc(ap['role'])} | <strong>Datum:</strong> {fmt(ap['date'])}</p>{note}{hint}")
+
+        chk_dict = ap.get("checklist") or {}
+        done_cnt = sum(1 for ck, _ in APP_CHECKLIST_ITEMS if chk_dict.get(ck))
+        total_cnt = len(APP_CHECKLIST_ITEMS)
+        chk_col = "#22C55E" if done_cnt == total_cnt else ("#F59E0B" if done_cnt > 0 else "#9CA3AF")
+        chk_chips = " ".join(
+            f"<span style='font-size:11px;margin-right:8px;color:{'#22C55E' if chk_dict.get(ck) else '#9CA3AF'}'>"
+            f"{'✅' if chk_dict.get(ck) else '⬜'} {esc(clbl)}</span>"
+            for ck, clbl in APP_CHECKLIST_ITEMS
+        )
+
+        show(f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'>"
+             f"<h3 style='margin:0'>{esc(ap['name'])} <span style='font-size:14px;color:{t['ACCENT']}'>({esc(ap['status'])})</span></h3>"
+             f"{chip(f'Checkliste: {done_cnt}/{total_cnt}', chk_col)}</div>"
+             f"<p style='margin-top:6px'><strong>Ziel-Rang:</strong> {esc(ap['role'])} | <strong>Datum:</strong> {fmt(ap['date'])}</p>"
+             f"<div style='margin:6px 0'>{chk_chips}</div>{note}{hint}")
+
         if can_write:
-            with st.expander(f"✏️ {ap['name']} bearbeiten"):
-                ns = st.selectbox("Status", APP_STATUS, index=APP_STATUS.index(ap["status"]) if ap["status"] in APP_STATUS else 0, key=f"as{ap['id']}")
-                if st.button("💾 Status speichern", key=f"asv{ap['id']}"):
-                    col_st = "#22C55E" if ns == "Angenommen" else ("#EF4444" if ns == "Abgelehnt" else "#F59E0B")
-                    send_discord_embed(
-                        "applicants",
-                        "📌 Bewerbungsstatus aktualisiert",
-                        f"Der Status der Bewerbung von **{ap['name']}** wurde geändert.",
-                        color_hex=col_st,
-                        fields=[
-                            {"name": "👤 Bewerber", "value": ap["name"], "inline": True},
-                            {"name": "🎯 Ziel-Rang", "value": ap["role"], "inline": True},
-                            {"name": "🔄 Neuer Status", "value": f"**{ns}**", "inline": True},
-                        ],
-                        author_name=user["username"]
+            with st.expander(f"✏️ {ap['name']} bearbeiten, Checkliste & Discord-Vorlagen"):
+                c_left, c_right = st.columns([1.2, 1])
+                with c_left:
+                    ns = st.selectbox("Status", APP_STATUS, index=APP_STATUS.index(ap["status"]) if ap["status"] in APP_STATUS else 0, key=f"as{ap['id']}")
+                    n_notes = st.text_area("Notizen aktualisieren", value=ap.get("notes", ""), height=90, key=f"an{ap['id']}")
+                    st.markdown("**✅ Bewerbungs-Checkliste**")
+                    new_chk = {}
+                    for ck, clbl in APP_CHECKLIST_ITEMS:
+                        new_chk[ck] = st.checkbox(clbl, value=bool(chk_dict.get(ck, False)), key=f"chk_{ap['id']}_{ck}")
+
+                    if st.button("💾 Status, Checkliste & Notizen speichern", key=f"asv{ap['id']}", use_container_width=True):
+                        if ns != ap["status"]:
+                            col_st = "#22C55E" if ns == "Angenommen" else ("#EF4444" if ns == "Abgelehnt" else "#F59E0B")
+                            send_discord_embed(
+                                "applicants",
+                                "📌 Bewerbungsstatus aktualisiert",
+                                f"Der Status der Bewerbung von **{ap['name']}** wurde geändert.",
+                                color_hex=col_st,
+                                fields=[
+                                    {"name": "👤 Bewerber", "value": ap["name"], "inline": True},
+                                    {"name": "🎯 Ziel-Rang", "value": ap["role"], "inline": True},
+                                    {"name": "🔄 Neuer Status", "value": f"**{ns}**", "inline": True},
+                                ],
+                                author_name=user["username"]
+                            )
+                        update("applicants", ap["id"], f"Bewerbung {ap['name']} aktualisiert", status=ns, notes=n_notes, checklist=new_chk)
+
+                with c_right:
+                    st.markdown("**📋 Discord-Antwortvorlagen (1-Klick-Kopie)**")
+                    tpl_type = st.radio(
+                        "Vorlage wählen",
+                        ["Einladung zum Gespräch", "Zusage (Testphase)", "Absage"],
+                        horizontal=True,
+                        key=f"tpl_{ap['id']}"
                     )
-                    update("applicants", ap["id"], f"Bewerbung {ap['name']} → {ns}", status=ns)
+                    if tpl_type == "Einladung zum Gespräch":
+                        tpl_text = (
+                            f"Hallo {ap['name']},\n\n"
+                            f"vielen Dank für deine Bewerbung als **{ap['role']}** bei **Wolf Life**!\n"
+                            f"Deine Bewerbung hat uns überzeugt. Melde dich bitte im Support-Warteraum für ein kurzes Kennenlerngespräch.\n\n"
+                            f"Mit freundlichen Grüßen\nDein Wolf Life Team"
+                        )
+                    elif tpl_type == "Zusage (Testphase)":
+                        tpl_text = (
+                            f"Herzlichen Glückwunsch {ap['name']}! 🐺\n\n"
+                            f"Du hast das Gespräch bestanden und startest ab sofort als **{ap['role']}** in deine {prob_days()}-tägige Probezeit.\n"
+                            f"Willkommen im **Wolf Life Team**!"
+                        )
+                    else:
+                        tpl_text = (
+                            f"Hallo {ap['name']},\n\n"
+                            f"vielen Dank für dein Interesse an **Wolf Life** und deine Bewerbung als **{ap['role']}**.\n"
+                            f"Leider müssen wir dir mitteilen, dass wir uns aktuell für andere Bewerber entschieden haben.\n\n"
+                            f"Weiterhin viel Spaß auf dem Server!\nDein Wolf Life Team"
+                        )
+                    st.code(tpl_text, language="text")
+
+                st.markdown("---")
                 if ap["status"] == "Angenommen" and ap["name"].lower() not in [x.lower() for x in member_names]:
                     if st.button("👥 Als Mitglied (Probezeit) übernehmen", key=f"adopt{ap['id']}"):
                         new_rank = ap["role"] if ap["role"] in RANKS else (RANKS[-1] if RANKS else ap["role"])
@@ -1480,7 +1590,6 @@ elif key == "calendar":
                         if clash: flash("⚠️ Eingeteilt, aber abgemeldet: " + ", ".join(clash), "warning")
                         st.rerun()
 
-    # --- Monatsansicht ---
     ss.setdefault("cal_m", date.today().replace(day=1))
     cm = ss.cal_m
     n1, n2, n3 = st.columns([1, 4, 1])
@@ -1514,7 +1623,6 @@ elif key == "calendar":
             cells += f"<div class='{cls}'><div class='cal-n'>{dt.day}</div>{body}</div>"
     st.markdown(f"<div class='cal'>{cells}</div>", unsafe_allow_html=True)
 
-    # --- Wochenübersicht ---
     ss.setdefault("cal_offset", 0)
     nav1, nav2, nav3 = st.columns([1, 2, 1])
     if nav1.button("⬅️ Vorherige Woche", use_container_width=True):
@@ -1568,6 +1676,7 @@ elif key == "calendar":
                         update("schedules", sid, f"Dienstplan „{et.strip() or sc['title']}“ bearbeitet", title=et.strip() or sc["title"], type=ety,
                                date=ed.isoformat(), time_from=ef.strftime("%H:%M"), time_to=eto.strftime("%H:%M"), assignees=list(ew), notes=en.strip())
                 with e2: confirm_delete("schedules", sc["id"], sc["title"], f"sched_{sc['id']}")
+
 
 # =====================================================================
 # VERWARNUNGEN
@@ -1707,22 +1816,235 @@ elif key == "tasks":
 
 
 # =====================================================================
-# PROTOKOLLE
+# TEAM-VORSCHLÄGE & ABSTIMMUNGEN
+# =====================================================================
+elif key == "suggestions":
+    st.title("💡 Team-Vorschläge & Abstimmungen")
+    st.caption("Reiche Ideen für den Server oder den Team-Alltag ein und stimme über bestehende Vorschläge ab.")
+
+    if can_write:
+        with st.expander("➕ Neuen Vorschlag einreichen"):
+            with st.form("add_sugg", clear_on_submit=True):
+                st_title = st.text_input("Kurzer Titel", placeholder="z.B. Ticket-System im Discord neu strukturieren")
+                st_desc = st.text_area("Beschreibung & Nutzen", placeholder="Was genau soll geändert werden und warum hilft es dem Team?")
+                if st.form_submit_button("💡 Vorschlag veröffentlichen", use_container_width=True):
+                    if not st_title.strip():
+                        st.warning("Bitte einen Titel eingeben.")
+                    else:
+                        with edit(f"Vorschlag „{st_title.strip()}“ eingereicht") as d:
+                            d["suggestions"].append({
+                                "id": uid(),
+                                "title": st_title.strip(),
+                                "description": st_desc.strip(),
+                                "author": user["username"],
+                                "date": date.today().isoformat(),
+                                "status": "Offen",
+                                "upvotes": [user["username"]],
+                                "downvotes": [],
+                            })
+                        send_discord_embed(
+                            "general",
+                            "💡 Neuer Team-Vorschlag eingereicht!",
+                            f"**{user['username']}** hat eine neue Idee zur Abstimmung eingereicht.",
+                            color_hex="#3B82F6",
+                            fields=[
+                                {"name": "📌 Titel", "value": st_title.strip(), "inline": False},
+                                {"name": "📝 Beschreibung", "value": st_desc.strip() or "-", "inline": False},
+                            ],
+                            author_name=user["username"]
+                        )
+                        st.rerun()
+
+    sf_col1, sf_col2 = st.columns([2, 1])
+    sq = sf_col1.text_input("🔍 Vorschläge durchsuchen...").lower()
+    sstat_f = sf_col2.selectbox("Status filtern", ["Alle"] + SUGG_STATUS)
+
+    suggs = [
+        s for s in data["suggestions"]
+        if (sq in s.get("title", "").lower() or sq in s.get("description", "").lower())
+        and sstat_f in ("Alle", s.get("status", "Offen"))
+    ]
+    suggs.sort(key=lambda s: (s.get("status", "Offen") in ("Angenommen", "Abgelehnt"), -(len(s.get("upvotes", [])) - len(s.get("downvotes", [])))))
+
+    if not suggs:
+        st.info("Noch keine Vorschläge vorhanden.")
+
+    for s in suggs:
+        ups = list(s.get("upvotes") or [])
+        downs = list(s.get("downvotes") or [])
+        score = len(ups) - len(downs)
+        cur_stat = s.get("status", "Offen")
+        scol = SUGG_COL.get(cur_stat, "#3B82F6")
+        score_txt = f"+{score}" if score > 0 else str(score)
+
+        show(f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'>"
+             f"<div><strong>{esc(s['title'])}</strong> &nbsp; {chip(cur_stat, scol)}</div>"
+             f"<div>{chip(f'Stimmen: {score_txt} (👍 {len(ups)} / 👎 {len(downs)})', '#22C55E' if score > 0 else '#EF4444' if score < 0 else '#9CA3AF')}</div></div>"
+             f"<div style='margin-top:8px;white-space:pre-wrap'>{esc(s.get('description', ''))}</div>"
+             f"<div class='muted' style='margin-top:8px'>Eingereicht von <strong>{esc(s.get('author', '-'))}</strong> am {fmt(s.get('date'))}</div>")
+
+        vc1, vc2, vc3, vc4 = st.columns([1.2, 1.2, 2.5, 1.5])
+        voted_up = user["username"] in ups
+        voted_dn = user["username"] in downs
+
+        if vc1.button(f"{'✅ ' if voted_up else ''}👍 Dafür ({len(ups)})", key=f"sup_{s['id']}", use_container_width=True):
+            with edit() as d:
+                for x in d["suggestions"]:
+                    if x["id"] == s["id"]:
+                        u_list = list(x.get("upvotes") or [])
+                        d_list = list(x.get("downvotes") or [])
+                        if user["username"] in u_list:
+                            u_list.remove(user["username"])
+                        else:
+                            u_list.append(user["username"])
+                            if user["username"] in d_list:
+                                d_list.remove(user["username"])
+                        x["upvotes"] = u_list
+                        x["downvotes"] = d_list
+            st.rerun()
+
+        if vc2.button(f"{'✅ ' if voted_dn else ''}👎 Dagegen ({len(downs)})", key=f"sdn_{s['id']}", use_container_width=True):
+            with edit() as d:
+                for x in d["suggestions"]:
+                    if x["id"] == s["id"]:
+                        u_list = list(x.get("upvotes") or [])
+                        d_list = list(x.get("downvotes") or [])
+                        if user["username"] in d_list:
+                            d_list.remove(user["username"])
+                        else:
+                            d_list.append(user["username"])
+                            if user["username"] in u_list:
+                                u_list.remove(user["username"])
+                        x["upvotes"] = u_list
+                        x["downvotes"] = d_list
+            st.rerun()
+
+        if is_admin or can_write:
+            with vc3.popover("⚙️ Status ändern"):
+                new_ss = st.selectbox("Neuer Status", SUGG_STATUS, index=SUGG_STATUS.index(cur_stat) if cur_stat in SUGG_STATUS else 0, key=f"sstat_{s['id']}")
+                if st.button("💾 Status speichern", key=f"ssv_{s['id']}", use_container_width=True):
+                    if new_ss != cur_stat:
+                        send_discord_embed(
+                            "general",
+                            f"💡 Vorschlag-Status: {new_ss}",
+                            f"Der Team-Vorschlag **{s['title']}** wurde aktualisiert.",
+                            color_hex=SUGG_COL.get(new_ss, "#3B82F6"),
+                            fields=[
+                                {"name": "📌 Vorschlag", "value": s["title"], "inline": True},
+                                {"name": "🔄 Neuer Status", "value": f"**{new_ss}**", "inline": True},
+                                {"name": "📊 Ergebnis", "value": f"👍 {len(ups)} / 👎 {len(downs)}", "inline": True},
+                            ],
+                            author_name=user["username"]
+                        )
+                    update("suggestions", s["id"], f"Vorschlag „{s['title']}“ → {new_ss}", status=new_ss)
+
+        with vc4:
+            if is_admin or (can_write and s.get("author") == user["username"]):
+                confirm_delete("suggestions", s["id"], s["title"], f"sugg_{s['id']}")
+
+
+# =====================================================================
+# TEAM-REGELWERK & LEITFÄDEN (INTERNES WIKI)
+# =====================================================================
+elif key == "wiki":
+    st.title("📚 Team-Regelwerk & Leitfäden")
+    st.caption("Zentrale Wissensdatenbank für Support-Richtlinien, Sanktionskataloge, Commands und Abläufe.")
+
+    if can_write:
+        with st.expander("➕ Neuen Leitfaden / Eintrag erstellen"):
+            with st.form("add_wiki", clear_on_submit=True):
+                wc1, wc2 = st.columns([2, 1])
+                w_title = wc1.text_input("Titel", placeholder="z.B. Ablauf bei Support-Gesprächen")
+                w_cat = wc2.selectbox("Kategorie", WIKI_CATS)
+                w_content = st.text_area("Inhalt / Richtlinie", height=200, placeholder="Schreibe hier die Regeln, Commands oder Schritte rein...")
+                if st.form_submit_button("📚 Eintrag speichern", use_container_width=True):
+                    if not w_title.strip() or not w_content.strip():
+                        st.warning("Bitte Titel und Inhalt ausfüllen.")
+                    else:
+                        with edit(f"Wiki-Eintrag „{w_title.strip()}“ erstellt") as d:
+                            d["wiki"].append({
+                                "id": uid(),
+                                "category": w_cat,
+                                "title": w_title.strip(),
+                                "content": w_content.strip(),
+                                "updated_by": user["username"],
+                                "updated_at": date.today().isoformat(),
+                            })
+                        st.rerun()
+
+    wf1, wf2 = st.columns([2.5, 1])
+    wq = wf1.text_input("🔍 Im Regelwerk & Leitfäden suchen...").lower()
+    wcat_f = wf2.selectbox("Kategorie", ["Alle Kategorien"] + WIKI_CATS)
+
+    wiki_items = [
+        w for w in data["wiki"]
+        if (wq in w.get("title", "").lower() or wq in w.get("content", "").lower())
+        and (wcat_f == "Alle Kategorien" or w.get("category") == wcat_f)
+    ]
+
+    if not wiki_items:
+        st.info("Keine Einträge im Regelwerk gefunden.")
+
+    for w in wiki_items:
+        show(f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'>"
+             f"<h3 style='margin:0'>{esc(w['title'])}</h3>"
+             f"{chip(w.get('category', 'Leitfaden'), '#A855F7')}</div>"
+             f"<pre style='white-space:pre-wrap;background:transparent;border:none;margin-top:10px;font-family:inherit;color:{t['TEXT_MAIN']}'>{esc(w['content'])}</pre>"
+             f"<div class='muted' style='margin-top:8px'>Zuletzt aktualisiert von <strong>{esc(w.get('updated_by', '-'))}</strong> ({fmt(w.get('updated_at'))})</div>")
+
+        if can_write:
+            we1, we2 = st.columns([1, 5])
+            with we1.popover("✏️ Bearbeiten"):
+                ew_title = st.text_input("Titel", value=w["title"], key=f"ewt_{w['id']}")
+                ew_cat = st.selectbox("Kategorie", WIKI_CATS, index=WIKI_CATS.index(w["category"]) if w.get("category") in WIKI_CATS else 0, key=f"ewc_{w['id']}")
+                ew_cont = st.text_area("Inhalt", value=w["content"], height=220, key=f"ewb_{w['id']}")
+                if st.button("💾 Änderungen speichern", key=f"ewsv_{w['id']}", use_container_width=True):
+                    if ew_title.strip() and ew_cont.strip():
+                        update("wiki", w["id"], f"Wiki „{ew_title.strip()}“ bearbeitet",
+                               title=ew_title.strip(), category=ew_cat, content=ew_cont.strip(),
+                               updated_by=user["username"], updated_at=date.today().isoformat())
+            with we2:
+                confirm_delete("wiki", w["id"], w["title"], f"wiki_{w['id']}")
+
+
+# =====================================================================
+# PROTOKOLLE (INKL. AUTOMATISCHEM PROTOKOLL-GENERATOR)
 # =====================================================================
 elif key == "protocols":
     st.title("📝 Teamsitzungs-Protokolle")
     if can_write:
-        with st.expander("➕ Neues Protokoll"):
+        with st.expander("➕ Neues Protokoll erstellen"):
+            ss.setdefault("proto_draft_content", "1. Begrüßung & Anwesenheit:\n\n2. Offene Aufgaben & Rückblick:\n\n3. Team-Vorschläge & Abstimmungen:\n\n4. Beförderungen / Verwarnungen:\n\n5. Sonstiges & Beschlüsse:")
+
+            if st.button("⚡ Tagesordnung automatisch ausfüllen (Aufgaben, Abmeldungen & Vorschläge)", key="gen_proto_btn"):
+                open_t = [x for x in data["tasks"] if x.get("status") != "Erledigt"]
+                act_ab = [a for a in data["absences"] if (parse_d(a.get("to_date")) or date.max) >= date.today()]
+                open_sg = [s for s in data["suggestions"] if s.get("status", "Offen") in ("Offen", "In Prüfung")]
+
+                t_lines = "\n".join(f"   - [{x['priority']}] {x['title']} (Zuständig: {x['assignee']})" for x in open_t) or "   - Keine offenen Aufgaben"
+                a_lines = "\n".join(f"   - {a['name']} (bis {fmt(a['to_date'])}: {a.get('reason') or 'Abgemeldet'})" for a in act_ab) or "   - Niemand abgemeldet"
+                s_lines = "\n".join(f"   - {s['title']} (👍 {len(s.get('upvotes', []))} / 👎 {len(s.get('downvotes', []))})" for s in open_sg) or "   - Keine offenen Vorschläge"
+
+                ss["proto_draft_content"] = (
+                    f"1. Begrüßung & Aktuelle Abmeldungen:\n{a_lines}\n\n"
+                    f"2. Offene Aufgaben ({len(open_t)}):\n{t_lines}\n\n"
+                    f"3. Team-Vorschläge zur Besprechung ({len(open_sg)}):\n{s_lines}\n\n"
+                    f"4. Beförderungen / Sanktionen:\n   - \n\n"
+                    f"5. Sonstiges & Beschlüsse:\n   - "
+                )
+                st.rerun()
+
             with st.form("add_proto", clear_on_submit=True):
-                pt = st.text_input("Titel")
+                pt = st.text_input("Titel", value=f"Teamsitzung vom {date.today().strftime('%d.%m.%Y')}")
                 pp = st.text_input("Teilnehmer")
-                pc = st.text_area("Inhalt", value="1. Begrüßung:\n\n2. Themen:\n\n3. Beschlüsse:", height=200)
+                pc = st.text_area("Inhalt", value=ss["proto_draft_content"], height=260)
                 if st.form_submit_button("Speichern", use_container_width=True):
                     if pt.strip():
                         now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
                         with edit(f"Protokoll „{pt.strip()}“") as d:
                             d["protocols"].append({"id": uid(), "title": pt.strip(), "participants": pp,
                                                    "date": now_str, "content": pc})
+                        ss.pop("proto_draft_content", None)
                         preview = pc[:900] + ("..." if len(pc) > 900 else "")
                         send_discord_embed(
                             "general",
@@ -1771,7 +2093,9 @@ elif key == "settings":
         old = st.text_input("Aktuelles Passwort", type="password")
         new = st.text_input(f"Neues Passwort (min. {MIN_PW} Zeichen)", type="password")
         if st.form_submit_button("Passwort ändern"):
-            if authenticate(user["username"], old) and len(new) >= MIN_PW:
+            if user["username"].lower() == ALPHA_OWNER_USER.lower():
+                st.info("ℹ️ Das Passwort des hardcoded Alpha-Owners ist fest im Code hinterlegt.")
+            elif authenticate(user["username"], old) and len(new) >= MIN_PW:
                 set_password(user["username"], new, "Passwort geändert")
                 st.success("Passwort geändert.")
             else: st.error(f"Aktuelles Passwort falsch oder neues Passwort zu kurz (min. {MIN_PW} Zeichen).")
@@ -1784,9 +2108,6 @@ elif key == "settings":
             with edit("Standard-Probezeit geändert") as d: d["settings"]["probation_days"] = int(nd)
             st.rerun()
 
-        # =================================================================
-        # DYNAMISCHE RÄNGE & KATEGORIEN (ÜBERGEORDNETE ROLLEN)
-        # =================================================================
         st.markdown("---")
         st.subheader("🛡️ Ränge & Kategorien (Übergeordnete Ränge)")
         st.caption(
@@ -1799,7 +2120,6 @@ elif key == "settings":
 
         tab_ranks, tab_cats = st.tabs(["🎖️ Ränge verwalten", "📂 Kategorien (Oberrubriken) verwalten"])
 
-        # --- TAB 1: RÄNGE VERWALTEN ---
         with tab_ranks:
             with st.expander("➕ Neuen Rang erstellen", expanded=not bool(custom_ranks)):
                 with st.form("create_rank_form", clear_on_submit=True):
@@ -1920,7 +2240,6 @@ elif key == "settings":
                                     d["settings"]["custom_ranks"] = [x for x in d["settings"]["custom_ranks"] if x["id"] != r_obj["id"]]
                                 st.rerun()
 
-        # --- TAB 2: KATEGORIEN (OBERRUBRIKEN) VERWALTEN ---
         with tab_cats:
             with st.expander("➕ Neue Kategorie (Oberrubrik) erstellen", expanded=not bool(cats)):
                 with st.form("create_cat_form", clear_on_submit=True):
@@ -1998,7 +2317,7 @@ elif key == "settings":
     if is_owner:
         st.markdown("---")
         st.subheader("🤖 Discord-Anbindung, Teamrollen & Wartungsmodus (nur Alpha-Owner)")
-        st.caption("Webhook-URLs, Bot-Token und Basis-Teamrollen liegen in `discord_config.json`, nicht in den Teamdaten und nicht im Backup. "
+        st.caption("Webhook-URLs, Bot-Token und Basis-Teamrollen liegen in der separaten Discord-Konfiguration (Cloud/Lokal), nicht in den Teamdaten und nicht im Backup. "
                    "Leere Felder nutzen den „Allgemein“-Webhook. Den Token kannst du auch als Umgebungsvariable `DISCORD_BOT_TOKEN` setzen.")
         cfg = dc_cfg()
         with st.form("discord_cfg_form"):
@@ -2085,12 +2404,27 @@ elif key == "accounts":
                         d["users"].append({"username": un.strip(), "pw_hash": hash_pw(up), "is_admin": ua or uo, "is_owner": uo, "permissions": perms})
                     st.rerun()
     for u in data["users"]:
+        is_hc = u["username"].lower() == ALPHA_OWNER_USER.lower()
         if u.get("is_owner"):
-            st.markdown(f"<span style='color:#B91C1C !important;font-weight:800'>👑 {esc(u['username'])} — Alpha-Owner (Dunkelrot)</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='color:#B91C1C !important;font-weight:800'>👑 {esc(u['username'])} — Alpha-Owner{' (System-Hardcoded)' if is_hc else ''}</span>", unsafe_allow_html=True)
         with st.expander(f"{u['username']} {'(Alpha-Owner)' if u.get('is_owner') else '(Administrator)' if u.get('is_admin') else ''}"):
             if u.get("is_owner") and not is_owner:
                 st.info("🔒 Alpha-Owner-Konto: kann nur von einem Alpha-Owner verwaltet werden.")
                 continue
+            if is_hc:
+                st.info("🔒 Dieser Alpha-Owner-Account ist fest im Code verankert. Benutzername, Passwort und Owner-Status sind geschützt.")
+                lm_opts = ["–"] + member_names
+                lm = st.selectbox("Verknüpftes Teammitglied (für Anzeige / eigene Abmeldung)", lm_opts,
+                                  index=lm_opts.index(u["member"]) if u.get("member") in lm_opts else 0,
+                                  format_func=lambda n: n if n == "–" else mlabel(n), key=f"lm_{u['username']}")
+                if st.button("💾 Verknüpfung speichern", key=f"sp_{u['username']}"):
+                    with edit(f"Teammitglied-Verknüpfung von {u['username']} geändert") as d:
+                        for x in d["users"]:
+                            if x["username"].lower() == ALPHA_OWNER_USER.lower():
+                                x["member"] = "" if lm == "–" else lm
+                    st.success("Gespeichert.")
+                continue
+
             new_uname = st.text_input("Benutzername ändern", value=u["username"], key=f"nu_{u['username']}")
             if st.button("✏️ Namen speichern", key=f"su_{u['username']}"):
                 new_clean = new_uname.strip()
