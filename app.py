@@ -1135,8 +1135,9 @@ if global_q:
 # =====================================================================
 elif key == "dashboard":
     st.title("📊 Dashboard & Live-Statistiken")
-    st.caption(f"Willkommen zurück, {user['username']}! Heute ist the {date.today().strftime('%d.%m.%Y')}.")
+    st.caption(f"Willkommen zurück, {user['username']}! Heute ist der {date.today().strftime('%d.%m.%Y')}.")
     open_apps = sum(a.get("status") not in ("Angenommen", "Abgelehnt") for a in data["applicants"])
+    # HIER WAR DER FEHLER: x.get("status") statt x.get("status"]
     open_tasks = sum(x.get("status") != "Erledigt" for x in data["tasks"])
     stats = [("Teammitglieder", len(data["members"])), ("Offene Bewerbungen", open_apps),
              ("Verwarnungen", len(data["warnings"])), ("Offene Aufgaben", open_tasks)]
@@ -1166,7 +1167,7 @@ elif key == "dashboard":
     c3, c4 = st.columns(2)
     with c3:
         st.subheader("✅ Offene Aufgaben")
-        ot = sorted([x for x in data["tasks"] if x["status"] != "Erledigt"],
+        ot = sorted([x for x in data["tasks"] if x.get("status") != "Erledigt"],
                     key=lambda x: PRIOS.index(x["priority"]) if x["priority"] in PRIOS else 9)[:6]
         show("".join(f"<div style='margin-bottom:6px'>{chip(x['priority'], PRIO_COL.get(x['priority'], '#9CA3AF'))} {esc(x['title'])} "
                      f"<span class='muted'>– {esc(x['assignee'])}</span></div>" for x in ot)
@@ -1384,13 +1385,9 @@ elif key == "dossier":
 
         q_lower = target_query.lower()
 
-        # 1. Aktuelles Teammitglied
         match_member = next((m for m in data["members"] if q_lower in m["name"].lower() or q_lower in str(m.get("discord_id", "")).lower()), None)
-        # 2. Ehemaliges Teammitglied
         match_archive = [a for a in data["archive"] if q_lower in a["name"].lower() or q_lower in str(a.get("discord_id", "")).lower()]
-        # 3. Bewerbungen
         match_applicants = [ap for ap in data["applicants"] if q_lower in ap["name"].lower()]
-        # 4. Verwarnungen
         match_warnings = [w for w in data["warnings"] if q_lower in w["member"].lower() or q_lower in w["reason"].lower()]
 
         c1, c2 = st.columns(2)
@@ -1438,7 +1435,6 @@ elif key == "archive":
     items = [a for a in data["archive"] if qa in a["name"].lower()]
     if not items: st.info("Keine Einträge vorhanden.")
     
-    # Lazy Loading: Zeige standardmäßig maximal 20 Einträge
     page_size = 20
     total_items = len(items)
     archive_page = st.number_input("Seite", min_value=1, max_value=max(1, (total_items + page_size - 1) // page_size), step=1, key="archive_page")
@@ -1569,7 +1565,6 @@ elif key == "applicants":
                         )
                     st.code(tpl_text, language="text")
 
-                # --- INTERAKTIVES TESTPHASEN-FEEDBACK ---
                 st.markdown("---")
                 st.markdown("### 📝 Interaktives Testphasen-Feedback")
                 st.caption("Hinterlasse hier Eindrücke zur laufenden Testphase / Probezeit, damit die Leitung entscheiden kann.")
@@ -1589,8 +1584,7 @@ elif key == "applicants":
                         else:
                             st.warning("Bitte einen Text eingeben.")
 
-                # Zeige vorhandenes Feedback für diesen Bewerber
-                existing_fbs = [f for f in data.get("feedback", []) if f.get("applicant_name") == ap["name"]]
+                existing_fbs = [f for f in data.get("feedback", []) if f.get("applicant_name"] == ap["name"]]
                 if existing_fbs:
                     st.markdown("**Bisheriges Team-Feedback:**")
                     for fb in existing_fbs:
@@ -1801,7 +1795,6 @@ elif key == "warnings":
                             st.rerun()
                         else: st.warning("Bitte einen Grund angeben.")
     
-    # Lazy Loading für Verwarnungen
     w_items = list(reversed(data["warnings"]))
     w_page_size = 15
     w_total = len(w_items)
@@ -2114,7 +2107,7 @@ elif key == "protocols":
             ss.setdefault("proto_draft_content", "1. Begrüßung & Anwesenheit:\n\n2. Offene Aufgaben & Rückblick:\n\n3. Team-Vorschläge & Abstimmungen:\n\n4. Beförderungen / Verwarnungen:\n\n5. Sonstiges & Beschlüsse:")
 
             if st.button("⚡ Tagesordnung automatisch ausfüllen (Aufgaben, Abmeldungen & Vorschläge)", key="gen_proto_btn"):
-                open_t = [x for x in data["tasks"] if x.get("status"] != "Erledigt"]
+                open_t = [x for x in data["tasks"] if x.get("status") != "Erledigt"]
                 act_ab = [a for a in data["absences"] if (parse_d(a.get("to_date")) or date.max) >= date.today()]
                 open_sg = [s for s in data["suggestions"] if s.get("status", "Offen") in ("Offen", "In Prüfung")]
 
@@ -2157,7 +2150,6 @@ elif key == "protocols":
                         st.rerun()
                     else: st.warning("Bitte einen Titel eingeben.")
 
-    # Lazy Loading für Protokolle
     p_items = list(reversed(data["protocols"]))
     p_page_size = 10
     p_total = len(p_items)
