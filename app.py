@@ -236,15 +236,15 @@ def load_data():
 
 
 def save_data(d):
-    tmp = DATA_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f: json.dump(d, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, DATA_FILE)
-    b = f"{DATA_FILE}.backup-{date.today()}"
-    if not os.path.exists(b): shutil.copy(DATA_FILE, b)
-    import glob
-    for old_b in sorted(glob.glob(DATA_FILE + ".backup-*"))[:-14]:
-        try: os.remove(old_b)
-        except OSError: pass
+    # Versuche optional lokal zu speichern, ignoriere Fehler auf Cloud-Hostern (Read-Only FS)
+    try:
+        tmp = DATA_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f: json.dump(d, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, DATA_FILE)
+    except Exception:
+        pass
+
+    # Primärer Speicher: Supabase Cloud
     sb_url, sb_key = _sb_creds()
     if sb_url and sb_key:
         try:
