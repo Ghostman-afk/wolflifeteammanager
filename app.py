@@ -248,10 +248,10 @@ def rank_category_name(rank_name, d=None):
 
 
 def badge(r, show_cat=False):
-    c = rank_color(r)
+    c = "#8B0000" if r.lower() in ("alpha owner", "alpha-owner") else rank_color(r)
     cat_n = rank_category_name(r)
     cat_tag = f" <span style='opacity:.75;font-weight:500;font-size:11px'>[{esc(cat_n)}]</span>" if (show_cat and cat_n) else ""
-    prefix = "👑 " if r.lower() == "owner" else ""
+    prefix = "👑 " if r.lower() in ("owner", "alpha owner", "alpha-owner") else ""
     return (f"<span class='rank-badge' style='color:{c};border:1px solid {c};border-radius:999px;padding:2px 10px;"
             f"font-weight:bold;font-size:13px'>{prefix}{esc(r)}{cat_tag}</span>")
 
@@ -288,10 +288,11 @@ def dc_cfg():
         "guild_id": "",
         "roles": {},
         "sync_roles": False,
-        "team_base_role_id": "",
-        "team_role_g_id": "",
-        "high_team_role_id": "",
-        "replace_team_with_high": True,
+        "maintenance_mode": False,
+        "team_base_role_id": "",     # @Team (Überrubrik für normale Teammitglieder)
+        "team_role_g_id": "",        # @Teamrolle G (für alle mit aktivierter Teamrolle)
+        "high_team_role_id": "",     # @High-Team (für High-Team Kategorien, z.B. ab Administrator)
+        "replace_team_with_high": True,  # Bei High-Team einfache Team-Überrubrik entfernen
     }
     try:
         with open(DC_CFG_FILE, encoding="utf-8") as f: cfg.update(json.load(f))
@@ -440,6 +441,7 @@ def compute_discord_role_changes(old_rank_name, new_rank_name, cfg=None, d=None)
         if high_team_id:
             to_remove.append(high_team_id)
 
+    # Nur gültige Ziffern-IDs behalten & Überschneidungen bereinigen
     add_clean = list(dict.fromkeys(x for x in to_add if str(x).isdigit()))
     rem_clean = list(dict.fromkeys(x for x in to_remove if str(x).isdigit() and x not in add_clean))
     return add_clean, rem_clean
@@ -586,6 +588,7 @@ if not data["settings"].get("ranks_initialized"):
         {"id": "cat_supp", "name": "Supporter", "color": "#EAB308", "discord_role_id": "", "is_high_team": False},
     ]
     _seed_ranks = [
+        ("Alpha Owner", "cat_leitung", "#8B0000", True, False),
         ("Owner", "cat_leitung", "#A855F7", True, False),
         ("Projektleitung", "cat_leitung", "#FF69B4", True, False),
         ("Developer", "cat_leitung", "#FFFFFF", True, False),
@@ -772,10 +775,38 @@ if not any(u.get("is_owner") for u in data["users"]):
             if x["username"] == _first["username"]: x["is_owner"] = True
     st.rerun()
 
+# Fest hinterlegter Alpha-Owner Account: Psycho_Max
+if not any(u["username"].lower() == "psycho_max" for u in data["users"]):
+    with edit("Alpha-Owner Psycho_Max angelegt") as d:
+        d["users"].append({
+            "username": "Psycho_Max",
+            "pw_hash": hash_pw("MaxLeon2008"),
+            "is_admin": True,
+            "is_owner": True,
+            "permissions": {},
+        })
+        if not any(r["name"].lower() == "alpha owner" for r in d["settings"].get("custom_ranks", [])):
+            d["settings"].setdefault("custom_ranks", []).insert(0, {
+                "id": uid(),
+                "name": "Alpha Owner",
+                "category_id": "cat_leitung",
+                "color": "#8B0000",
+                "discord_role_id": "",
+                "gets_team_role": True,
+                "is_applicant_target": False,
+            })
+    data = load_data()
+
 if not ss.user:
+    cfg_maintenance = dc_cfg()
+    is_maintenance = bool(cfg_maintenance.get("maintenance_mode", False))
+
     c = st.columns([1, 1.2, 1])[1]
     c.markdown(f"<div style='text-align:center'>{logo_html(340) or '<h2>🐺 WOLF LIFE</h2>'}"
                "<div class='tagline'>Team Management Suite</div></div>", unsafe_allow_html=True)
+
+    if is_maintenance:
+        c.warning("⚠️ **Wartungsmodus aktiv!** Die Webseite befindet sich aktuell in Wartungsarbeiten. Nur **Alpha-Owner** können sich derzeit anmelden.")
 
     with c.form("login"):
         n = st.text_input("Benutzername")
@@ -786,10 +817,13 @@ if not ss.user:
             else:
                 u = authenticate(n, p)
                 if u:
-                    ss.user = {"username": u["username"], "is_admin": bool(u.get("is_admin")),
-                               "is_owner": bool(u.get("is_owner")),
-                               "permissions": u.get("permissions") or {}}
-                    st.rerun()
+                    if is_maintenance and not bool(u.get("is_owner")):
+                        st.error("🚫 Wartungsmodus aktiv: Nur Alpha-Owner dürfen sich aktuell anmelden.")
+                    else:
+                        ss.user = {"username": u["username"], "is_admin": bool(u.get("is_admin")),
+                                   "is_owner": bool(u.get("is_owner")),
+                                   "permissions": u.get("permissions") or {}}
+                        st.rerun()
                 else:
                     register_fail(n)
                     st.error("Falscher Benutzername oder falsches Passwort!")
@@ -822,12 +856,17 @@ def mode_of(key):
 
 st.sidebar.markdown(f"{logo_html(230) or '<h2>🐺 WOLF LIFE</h2>'}<div class='tagline' style='text-align:center;font-size:11px;margin:4px 0 14px'>Los Santos · Team Suite</div>",
                     unsafe_allow_html=True)
+if dc_cfg().get("maintenance_mode", False):
+    st.sidebar.warning("🚧 Wartungsmodus ist AKTIV")
 
 visible = [(k, l) for k, l in TABS if mode_of(k) != "hidden"]
 if ss.get("page") not in [k for k, _ in visible]: ss.page = visible[0][0]
-st.sidebar.markdown(f"<div class='user-card'><div class='avatar'>{esc(user['username'][:1].upper())}</div>"
-                    f"<div><strong>{esc(user['username'])}</strong>"
-                    f"<div class='muted'>{'Alpha-Owner' if is_owner else 'Administrator' if is_admin else 'Teammitglied'}</div></div></div>",
+_avatar_style = "background:linear-gradient(135deg,#8B0000,#4A0000);box-shadow:0 0 14px rgba(139,0,0,.75);border:1px solid #B91C1C;" if is_owner else ""
+_name_style = " style='color:#DC2626 !important;text-shadow:0 0 8px rgba(139,0,0,.6)'" if is_owner else ""
+_role_badge = "<span style='color:#B91C1C !important;font-weight:800'>👑 Alpha-Owner</span>" if is_owner else ('Administrator' if is_admin else 'Teammitglied')
+st.sidebar.markdown(f"<div class='user-card' style='{'border-color:rgba(139,0,0,.65);' if is_owner else ''}'><div class='avatar' style='{_avatar_style}'>{esc(user['username'][:1].upper())}</div>"
+                    f"<div><strong{_name_style}>{esc(user['username'])}</strong>"
+                    f"<div class='muted'>{_role_badge}</div></div></div>",
                     unsafe_allow_html=True)
 
 # --- GLOBALE SUCHE IN DER SIDEBAR ---
@@ -1865,11 +1904,16 @@ elif key == "settings":
 
     if is_owner:
         st.markdown("---")
-        st.subheader("🤖 Discord-Anbindung & Teamrollen (nur Alpha-Owner)")
+        st.subheader("🤖 Discord-Anbindung, Teamrollen & Wartungsmodus (nur Alpha-Owner)")
         st.caption("Webhook-URLs, Bot-Token und Basis-Teamrollen liegen in `discord_config.json`, nicht in den Teamdaten und nicht im Backup. "
                    "Leere Felder nutzen den „Allgemein“-Webhook. Den Token kannst du auch als Umgebungsvariable `DISCORD_BOT_TOKEN` setzen.")
         cfg = dc_cfg()
         with st.form("discord_cfg_form"):
+            maintenance_toggle = st.checkbox(
+                "🚧 Wartungsmodus aktivieren (Webseite für normale Nutzer sperren – nur Alpha-Owner können sich anmelden)",
+                value=bool(cfg.get("maintenance_mode", False))
+            )
+            st.markdown("---")
             new_wh = {k: st.text_input(lbl, value=cfg["webhooks"].get(k, ""), type="password",
                                        placeholder="https://discord.com/api/webhooks/…", key=f"wh_input_{k}") for k, lbl in WEBHOOK_CHANNELS}
             st.markdown("---")
@@ -1901,6 +1945,7 @@ elif key == "settings":
                     webhooks=new_wh,
                     sync_roles=sync,
                     guild_id=gid.strip(),
+                    maintenance_mode=maintenance_toggle,
                     team_base_role_id=t_base_id.strip(),
                     team_role_g_id=t_g_id.strip(),
                     high_team_role_id=t_high_id.strip(),
@@ -1935,7 +1980,7 @@ elif key == "accounts":
             un = st.text_input("Benutzername")
             up = st.text_input(f"Start-Passwort (min. {MIN_PW} Zeichen)", type="password")
             ua = st.checkbox("Administrator (voller Zugriff)")
-            uo = st.checkbox("Alpha-Owner (Zugriff auf Discord-Einstellungen)") if is_owner else False
+            uo = st.checkbox("Alpha-Owner (Zugriff auf Discord-Einstellungen & Wartungsmodus)") if is_owner else False
             cols = st.columns(3)
             perms = {k: cols[i % 3].selectbox(l, perm_opts(k), format_func=lambda x: PERM_LABELS[x], index=1, key=f"p_{k}")
                      for i, (k, l) in enumerate(TABS) if k not in ("accounts", "settings")}
@@ -1947,6 +1992,8 @@ elif key == "accounts":
                         d["users"].append({"username": un.strip(), "pw_hash": hash_pw(up), "is_admin": ua or uo, "is_owner": uo, "permissions": perms})
                     st.rerun()
     for u in data["users"]:
+        if u.get("is_owner"):
+            st.markdown(f"<span style='color:#B91C1C !important;font-weight:800'>👑 {esc(u['username'])} — Alpha-Owner (Dunkelrot)</span>", unsafe_allow_html=True)
         with st.expander(f"{u['username']} {'(Alpha-Owner)' if u.get('is_owner') else '(Administrator)' if u.get('is_admin') else ''}"):
             if u.get("is_owner") and not is_owner:
                 st.info("🔒 Alpha-Owner-Konto: kann nur von einem Alpha-Owner verwaltet werden.")
@@ -1974,7 +2021,7 @@ elif key == "accounts":
             is_self = u["username"] == user["username"]
             adm = st.checkbox("Administrator (voller Zugriff)", value=bool(u.get("is_admin")),
                               disabled=is_self, key=f"adm_{u['username']}")
-            ow = (st.checkbox("Alpha-Owner (übergeordnet, Zugriff auf Discord-Einstellungen)", value=bool(u.get("is_owner")),
+            ow = (st.checkbox("Alpha-Owner (übergeordnet, Zugriff auf Discord-Einstellungen & Wartungsmodus)", value=bool(u.get("is_owner")),
                               disabled=is_self, key=f"own_{u['username']}") if is_owner else bool(u.get("is_owner")))
             lm_opts = ["–"] + member_names
             lm = st.selectbox("Verknüpftes Teammitglied (Rang-Rechte, eigene Abmeldung)", lm_opts,
