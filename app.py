@@ -144,7 +144,7 @@ def parse_d(sv, default=None):
     except Exception: return default
 
 
-# --- DATEN (atomar speichern, gesperrt, mit Backup) ---
+# --- DATEN (Supabase Cloud-Speicher + atomarer lokaler Fallback) ---
 @st.cache_resource
 def _lock(): return threading.Lock()
 
@@ -155,9 +155,76 @@ DEFAULTS = {
 }
 
 
+def _sb_creds():
+    url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+    key = os.environ.get("SUPABASE_KEY", "").strip()
+    if not (url and key):
+        try:
+            url = str(st.secrets.get("SUPABASE_URL", "")).strip().rstrip("/")
+            key = str(st.secrets.get("SUPABASE_KEY", "")).strip()
+        except Exception:
+            pass
+    return url, key
+
+
+def _sb_get_doc(doc_id):
+    url, key = _sb_creds()
+    if not (url and key):
+        return None
+    req = urllib.request.Request(
+        f"{url}/rest/v1/wolflife_store?id=eq.{quote(doc_id)}&select=payload",
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Accept": "application/json",
+        },
+        method="GET",
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        rows = json.loads(resp.read().decode("utf-8"))
+        if rows and isinstance(rows[0].get("payload"), dict):
+            return rows[0]["payload"]
+        return {}
+
+
+def _sb_put_doc(doc_id, payload):
+    url, key = _sb_creds()
+    if not (url and key):
+        return False
+    body = json.dumps({"id": doc_id, "payload": payload, "updated_at": datetime.now(timezone.utc).isoformat()}).encode("utf-8")
+    req = urllib.request.Request(
+        f"{url}/rest/v1/wolflife_store",
+        data=body,
+        headers={
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10):
+        return True
+
+
 def load_data():
     d = {}
-    if os.path.exists(DATA_FILE):
+    sb_url, sb_key = _sb_creds()
+    if sb_url and sb_key:
+        try:
+            cloud_d = _sb_get_doc("team_data")
+            if cloud_d is not None:
+                d = cloud_d
+                try:
+                    tmp = DATA_FILE + ".tmp"
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        json.dump(d, f, indent=2, ensure_ascii=False)
+                    os.replace(tmp, DATA_FILE)
+                except Exception:
+                    pass
+        except Exception as e:
+            st.warning(f"⚠️ Supabase-Verbindung kurz gestört (nutze lokalen Zwischenspeicher): {e}")
+    if not d and os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, encoding="utf-8") as f: d = json.load(f)
         except Exception:
@@ -178,6 +245,12 @@ def save_data(d):
     for old_b in sorted(glob.glob(DATA_FILE + ".backup-*"))[:-14]:
         try: os.remove(old_b)
         except OSError: pass
+    sb_url, sb_key = _sb_creds()
+    if sb_url and sb_key:
+        try:
+            _sb_put_doc("team_data", d)
+        except Exception as e:
+            st.error(f"❌ Fehler beim Speichern in Supabase: {e}")
 
 
 @contextmanager
@@ -294,6 +367,15 @@ def dc_cfg():
         "high_team_role_id": "",     # @High-Team (für High-Team Kategorien, z.B. ab Administrator)
         "replace_team_with_high": True,  # Bei High-Team einfache Team-Überrubrik entfernen
     }
+    sb_url, sb_key = _sb_creds()
+    if sb_url and sb_key:
+        try:
+            cloud_cfg = _sb_get_doc("discord_config")
+            if cloud_cfg:
+                cfg.update(cloud_cfg)
+                return cfg
+        except Exception:
+            pass
     try:
         with open(DC_CFG_FILE, encoding="utf-8") as f: cfg.update(json.load(f))
     except Exception: pass
@@ -306,6 +388,12 @@ def dc_save(cfg):
     try: os.chmod(tmp, 0o600)
     except Exception: pass
     os.replace(tmp, DC_CFG_FILE)
+    sb_url, sb_key = _sb_creds()
+    if sb_url and sb_key:
+        try:
+            _sb_put_doc("discord_config", cfg)
+        except Exception as e:
+            st.error(f"❌ Discord-Config konnte nicht in Supabase gespeichert werden: {e}")
 
 
 def _dc_request(method, url, payload=None, token=None):
@@ -896,6 +984,11 @@ perm_mode = mode_of(key)
 can_write = perm_mode in ("full", "absence_own") if key == "absences" else (perm_mode == "full")
 if perm_mode == "readonly": st.sidebar.markdown(chip("👁 Nur-Lesen", "#F59E0B"), unsafe_allow_html=True)
 elif perm_mode == "absence_own": st.sidebar.markdown(chip("👤 Nur eigene Abmeldungen", "#3B82F6"), unsafe_allow_html=True)
+_sb_u, _sb_k = _sb_creds()
+if _sb_u and _sb_k:
+    st.sidebar.caption("☁️ Cloud-Speicher: Aktiv (Supabase)")
+else:
+    st.sidebar.caption("💾 Speicher: Lokal (nicht dauerhaft auf Cloud-Hostern)")
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 if st.sidebar.button("🔒 Abmelden", key="logout", use_container_width=True):
     ss.user = None
@@ -2056,6 +2149,18 @@ elif key == "accounts":
     bk = {k: v for k, v in data.items() if k != "users"}
     st.download_button("💾 Backup herunterladen (ohne Benutzerkonten)", json.dumps(bk, indent=2, ensure_ascii=False),
                        file_name=f"wolflife_backup_{date.today()}.json", mime="application/json")
+    up_bk = st.file_uploader("📥 Backup-JSON wiederherstellen", type=["json"], key="restore_bk_up")
+    if up_bk and st.button("🔄 Backup jetzt einspielen", key="restore_bk_btn"):
+        try:
+            restored = json.loads(up_bk.read().decode("utf-8"))
+            with edit("Backup eingespielt") as d:
+                for k in DEFAULTS:
+                    if k != "users" and k in restored:
+                        d[k] = restored[k]
+            st.success("✅ Backup erfolgreich wiederhergestellt!")
+            st.rerun()
+        except Exception as ex:
+            st.error(f"Ungültige Backup-Datei: {ex}")
     st.subheader("🧾 Aktivitätslog (letzte 30)")
     show("".join(f"<div class='muted'>{esc(e['ts'].replace('T', ' '))} – <strong>{esc(e['user'])}</strong>: {esc(e['action'])}</div>"
                  for e in reversed(data["log"][-30:])) or "<span class='muted'>Noch keine Einträge.</span>")
