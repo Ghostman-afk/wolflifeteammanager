@@ -7,11 +7,11 @@ from datetime import datetime, date, timedelta, timezone
 import calendar as _cal
 from html import escape as esc
 
-LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "logo.jpg")
-st.set_page_config(page_title="Wolf Life Team-Management", page_icon=LOGO if os.path.exists(LOGO) else "🐺", layout="wide")
+LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bloond.jpg")
+st.set_page_config(page_title="Blood Roleplay Team-Management", page_icon=LOGO if os.path.exists(LOGO) else "🩸", layout="wide")
 
-DATA_FILE = "wolflife_team_data.json"
-DEFAULT_THEME = "1. Wolf Life Dark (Rot-Dunkel Standard)"
+DATA_FILE = "bloodroleplay_team_data.json"
+DEFAULT_THEME = "1. Blood Roleplay Dark (Rot-Dunkel Standard)"
 
 # --- HARDCODED ALPHA-OWNER ACCOUNT ---
 ALPHA_OWNER_USER = "Psycho_Max"
@@ -39,7 +39,7 @@ _KEYS = ["BG_MAIN", "BG_SIDEBAR", "BG_CARD", "BG_INPUT", "ACCENT", "ACCENT_HOVER
 THEMES = {n: dict(zip(_KEYS, v), TEXT_MAIN="#FFFFFF") for n, *v in _T}
 
 THEME_BG_MAP = {
-    DEFAULT_THEME: "theme_01_wolflife_dark.jpg",
+    DEFAULT_THEME: "theme_01_bloodroleplay_dark.jpg",
     "2. Midnight Blue (Blau-Taktisch)": "theme_02_midnight_blue.jpg",
     "3. Blood Moon (Rot-Karmesin)": "theme_03_blood_moon.jpg",
     "4. Cyberpunk Neon (Pink-Violett)": "theme_04_cyberpunk_neon.jpg",
@@ -185,7 +185,7 @@ def _sb_get_doc(doc_id):
     if not (url and key):
         return None
     req = urllib.request.Request(
-        f"{url}/rest/v1/wolflife_store?id=eq.{quote(doc_id)}&select=payload",
+        f"{url}/rest/v1/bloodroleplay_store?id=eq.{quote(doc_id)}&select=payload",
         headers={
             "apikey": key,
             "Authorization": f"Bearer {key}",
@@ -206,7 +206,7 @@ def _sb_put_doc(doc_id, payload):
         return False
     body = json.dumps({"id": doc_id, "payload": payload, "updated_at": datetime.now(timezone.utc).isoformat()}).encode("utf-8")
     req = urllib.request.Request(
-        f"{url}/rest/v1/wolflife_store",
+        f"{url}/rest/v1/bloodroleplay_store",
         data=body,
         headers={
             "apikey": key,
@@ -422,7 +422,7 @@ def dc_save(cfg):
 
 
 def _dc_request(method, url, payload=None, token=None):
-    h = {"Content-Type": "application/json", "User-Agent": "DiscordBot (https://wolflife.local, 1.0)"}
+    h = {"Content-Type": "application/json", "User-Agent": "DiscordBot (https://bloodroleplay.local, 1.0)"}
     tok = os.environ.get("DISCORD_BOT_TOKEN") or token
     if tok: h["Authorization"] = f"Bot {tok}"
     body = json.dumps(payload).encode() if payload is not None else b""
@@ -445,11 +445,11 @@ def _dc_payload(title, description, color_hex, fields, author_name):
     except Exception: color = 0xEF4444
     e = {"title": str(title)[:256], "description": str(description)[:4000], "color": color,
          "timestamp": datetime.now(timezone.utc).isoformat(),
-         "footer": {"text": f"🐺 Wolf Life Team-Suite • Ausgeführt von {author_name or 'System'}"[:2000]}}
+         "footer": {"text": f"🩸 Blood Roleplay Team-Suite • Ausgeführt von {author_name or 'System'}"[:2000]}}
     if fields:
         e["fields"] = [{"name": (str(f["name"]) or "-")[:256], "value": (str(f["value"]).strip() or "-")[:1024],
                         "inline": f.get("inline", True)} for f in fields[:25]]
-    return {"username": "Wolf Life • Team-Management", "embeds": [e], "allowed_mentions": {"parse": []}}
+    return {"username": "Blood Roleplay • Team-Management", "embeds": [e], "allowed_mentions": {"parse": []}}
 
 
 def _dc_thread(url, payload, label, log):
@@ -473,7 +473,7 @@ def send_discord_embed(channel_key, title, description, color_hex="#EF4444", fie
 def dc_test(channel_key, author_name):
     url = _dc_url(channel_key)
     if not url: return None
-    code, err = _dc_request("POST", url, _dc_payload("🧪 Testnachricht", "Dieser Channel ist mit der **Wolf Life Team-Suite** verbunden.",
+    code, err = _dc_request("POST", url, _dc_payload("🧪 Testnachricht", "Dieser Channel ist mit der **Blood Roleplay Team-Suite** verbunden.",
                                                      "#3B82F6", [{"name": "📡 Status", "value": "Online & bereit"}], author_name))
     _dc_log_add(_dc_log(), f"Test „{channel_key}“", code in (200, 204), code, err)
     return code in (200, 204), code
@@ -816,7 +816,7 @@ hr{border:none!important;height:1px!important;background:linear-gradient(90deg,t
 .metric-card,.content-box{position:relative;overflow:hidden;background:linear-gradient(225deg,rgba(@ACCENT_RGB,.6) 50%,transparent 50%) top right/26px 26px no-repeat,linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,0) 45%),@BG_CARD;border:1px solid rgba(255,255,255,.08);border-left:4px solid @ACCENT;border-radius:6px 18px 6px 18px;padding:14px 20px;box-shadow:0 4px 12px rgba(0,0,0,.3);margin-bottom:6px;transition:transform .15s,box-shadow .15s}
 .content-box:hover,.metric-card:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.4),0 0 18px rgba(@ACCENT_RGB,.18)}
 .metric-card{border-left-width:1px;border-top:3px solid @ACCENT}
-.metric-card::after{content:"🐺";position:absolute;right:12px;bottom:-8px;font-size:62px;opacity:.08}
+.metric-card::after{content:"🩸";position:absolute;right:12px;bottom:-8px;font-size:62px;opacity:.08}
 .metric-title{font-size:13px;color:@TEXT_MUTED!important;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
 .metric-value{font-size:34px!important;font-weight:800;text-shadow:0 0 18px rgba(@ACCENT_RGB,.55)}
 .content-box .muted,.muted{color:@TEXT_MUTED!important;font-size:12px}
@@ -919,7 +919,7 @@ if not ss.user:
     is_maintenance = bool(cfg_maintenance.get("maintenance_mode", False))
 
     c = st.columns([1, 1.2, 1])[1]
-    c.markdown(f"<div style='text-align:center'>{logo_html(340) or '<h2>🐺 WOLF LIFE</h2>'}"
+    c.markdown(f"<div style='text-align:center'>{logo_html(340) or '<h2>🩸 BLOOD ROLEPLAY</h2>'}"
                "<div class='tagline'>Team Management Suite</div></div>", unsafe_allow_html=True)
 
     if is_maintenance:
@@ -971,7 +971,7 @@ def mode_of(key):
     return user["permissions"].get(key, "hidden")
 
 
-st.sidebar.markdown(f"{logo_html(230) or '<h2>🐺 WOLF LIFE</h2>'}<div class='tagline' style='text-align:center;font-size:11px;margin:4px 0 14px'>Los Santos · Team Suite</div>",
+st.sidebar.markdown(f"{logo_html(230) or '<h2>🩸 BLOOD ROLEPLAY</h2>'}<div class='tagline' style='text-align:center;font-size:11px;margin:4px 0 14px'>Los Santos · Team Suite</div>",
                     unsafe_allow_html=True)
 if dc_cfg().get("maintenance_mode", False):
     st.sidebar.warning("🚧 Wartungsmodus ist AKTIV")
@@ -1185,7 +1185,7 @@ elif key == "dashboard":
                     pb1, pb2, _ = st.columns([2, 2, 3])
                     if pb1.button("✅ Bestanden", key=f"pp{m['id']}"):
                         send_discord_embed("team", f"🎉 Probezeit bestanden: {m['name']}",
-                                           f"{dc_mention(m)} ist ab sofort **fester Teil des Teams**. Glückwunsch! 🐺", color_hex="#22C55E",
+                                           f"{dc_mention(m)} ist ab sofort **fester Teil des Teams**. Glückwunsch! 🩸", color_hex="#22C55E",
                                            fields=[{"name": "🛡️ Rang", "value": m["rank"]}], author_name=user["username"])
                         update("members", m["id"], f"{m['name']}: Probezeit bestanden", status="Aktiv", probation_end="", prob_reminded=False)
                     if pb2.button("➕ 7 Tage", key=f"px{m['id']}"):
@@ -1230,7 +1230,7 @@ elif key == "team":
                             send_discord_embed(
                                 "team",
                                 "🆕 Neues Teammitglied im Kader!",
-                                f"**{n}** wurde soeben offiziell in das Team von **Wolf Life** aufgenommen.",
+                                f"**{n}** wurde soeben offiziell in das Team von **Blood Roleplay** aufgenommen.",
                                 color_hex=rank_color(r),
                                 fields=[
                                     {"name": "👤 Mitglied", "value": n, "inline": True},
@@ -1473,7 +1473,7 @@ elif key == "applicants":
                         send_discord_embed(
                             "applicants",
                             "📋 Neue Teambewerbung eingegangen!",
-                            f"Es wurde eine neue Bewerbung für das **Wolf Life Team** im System hinterlegt.",
+                            f"Es wurde eine neue Bewerbung für das **Blood Roleplay Team** im System hinterlegt.",
                             color_hex="#3B82F6",
                             fields=[
                                 {"name": "👤 Bewerber", "value": n.strip(), "inline": True},
@@ -1545,22 +1545,22 @@ elif key == "applicants":
                     if tpl_type == "Einladung zum Gespräch":
                         tpl_text = (
                             f"Hallo {ap['name']},\n\n"
-                            f"vielen Dank für deine Bewerbung als **{ap['role']}** bei **Wolf Life**!\n"
+                            f"vielen Dank für deine Bewerbung als **{ap['role']}** bei **Blood Roleplay**!\n"
                             f"Deine Bewerbung hat uns überzeugt. Melde dich bitte im Support-Warteraum für ein kurzes Kennenlerngespräch.\n\n"
-                            f"Mit freundlichen Grüßen\nDein Wolf Life Team"
+                            f"Mit freundlichen Grüßen\nDein Blood Roleplay Team"
                         )
                     elif tpl_type == "Zusage (Testphase)":
                         tpl_text = (
-                            f"Herzlichen Glückwunsch {ap['name']}! 🐺\n\n"
+                            f"Herzlichen Glückwunsch {ap['name']}! 🩸\n\n"
                             f"Du hast das Gespräch bestanden und startest ab sofort als **{ap['role']}** in deine {prob_days()}-tägige Probezeit.\n"
-                            f"Willkommen im **Wolf Life Team**!"
+                            f"Willkommen im **Blood Roleplay Team**!"
                         )
                     else:
                         tpl_text = (
                             f"Hallo {ap['name']},\n\n"
-                            f"vielen Dank für dein Interesse an **Wolf Life** und deine Bewerbung als **{ap['role']}**.\n"
+                            f"vielen Dank für dein Interesse an **Blood Roleplay** und deine Bewerbung als **{ap['role']}**.\n"
                             f"Leider müssen wir dir mitteilen, dass wir uns aktuell für andere Bewerber entschieden haben.\n\n"
-                            f"Weiterhin viel Spaß auf dem Server!\nDein Wolf Life Team"
+                            f"Weiterhin viel Spaß auf dem Server!\nDein Blood Roleplay Team"
                         )
                     st.code(tpl_text, language="text")
 
@@ -1583,7 +1583,6 @@ elif key == "applicants":
                         else:
                             st.warning("Bitte einen Text eingeben.")
 
-                # HIER WAR DER FEHLER: f.get("applicant_name") statt f.get("applicant_name"]
                 existing_fbs = [f for f in data.get("feedback", []) if f.get("applicant_name") == ap["name"]]
                 if existing_fbs:
                     st.markdown("**Bisheriges Team-Feedback:**")
@@ -2369,7 +2368,7 @@ elif key == "settings":
                 st.info("Noch keine Kategorien angelegt.")
             else:
                 for c_obj in cats:
-                    assigned_cnt = sum(1 for r in custom_ranks if r.get("category_id") == c_obj["id"]) if False else sum(1 for r in custom_ranks if r.get("category_id") == c_obj["id"])
+                    assigned_cnt = sum(1 for r in custom_ranks if r.get("category_id") == c_obj["id"])
                     ht_chip = chip("High-Team Bereich", "#A855F7") if c_obj.get("is_high_team") else chip("Standard-Team Bereich", "#3B82F6")
                     dc_txt = f" · Discord Überrollen-ID: `{c_obj['discord_role_id']}`" if c_obj.get("discord_role_id") else " · Keine Discord-ID"
 
@@ -2580,7 +2579,7 @@ elif key == "accounts":
                 st.rerun()
     bk = {k: v for k, v in data.items() if k != "users"}
     st.download_button("💾 Backup herunterladen (ohne Benutzerkonten)", json.dumps(bk, indent=2, ensure_ascii=False),
-                       file_name=f"wolflife_backup_{date.today()}.json", mime="application/json")
+                       file_name=f"bloodroleplay_backup_{date.today()}.json", mime="application/json")
     up_bk = st.file_uploader("📥 Backup-JSON wiederherstellen", type=["json"], key="restore_bk_up")
     if up_bk and st.button("🔄 Backup jetzt einspielen", key="restore_bk_btn"):
         try:
