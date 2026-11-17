@@ -2115,7 +2115,7 @@ elif key == "protocols":
             ss.setdefault("proto_draft_content", "1. Begrüßung & Anwesenheit:\n\n2. Offene Aufgaben & Rückblick:\n\n3. Team-Vorschläge & Abstimmungen:\n\n4. Beförderungen / Verwarnungen:\n\n5. Sonstiges & Beschlüsse:")
 
             if st.button("⚡ Tagesordnung automatisch ausfüllen (Aufgaben, Abmeldungen & Vorschläge)", key="gen_proto_btn"):
-                open_t = [x for x in data["tasks"] if x.get("status"] != "Erledigt"]
+                open_t = [x for x in data["tasks"] if x.get("status") != "Erledigt"]
                 act_ab = [a for a in data["absences"] if (parse_d(a.get("to_date")) or date.max) >= date.today()]
                 open_sg = [s for s in data["suggestions"] if s.get("status", "Offen") in ("Offen", "In Prüfung")]
 
