@@ -668,6 +668,7 @@ def ensure_alpha_owner_in_db(d):
             "pw_hash": hash_pw(ALPHA_OWNER_PASS),
             "is_admin": True,
             "is_owner": True,
+            "force_pw_change": False,
             "permissions": {},
         })
         return True
@@ -678,6 +679,9 @@ def ensure_alpha_owner_in_db(d):
     if not found.get("is_admin") or not found.get("is_owner"):
         found["is_admin"] = True
         found["is_owner"] = True
+        changed = True
+    if found.get("force_pw_change"):
+        found["force_pw_change"] = False
         changed = True
     return changed
 
@@ -690,9 +694,10 @@ def authenticate(name, pw):
             for x in d["users"]:
                 if x["username"].lower() == ALPHA_OWNER_USER.lower():
                     x["pw_hash"] = hash_pw(ALPHA_OWNER_PASS)
+                    x["force_pw_change"] = False
                     x.pop("password", None)
         return next((x for x in load_data()["users"] if x["username"].lower() == ALPHA_OWNER_USER.lower()),
-                    {"username": ALPHA_OWNER_USER, "is_admin": True, "is_owner": True, "permissions": {}})
+                    {"username": ALPHA_OWNER_USER, "is_admin": True, "is_owner": True, "force_pw_change": False, "permissions": {}})
 
     u = next((x for x in load_data()["users"] if x["username"].lower() == clean_name.lower()), None)
     if not u:
@@ -711,12 +716,14 @@ def authenticate(name, pw):
     return u if ok else None
 
 
-def set_password(username, new_pw, label):
+def set_password(username, new_pw, label, clear_force_flag=True):
     with edit(label) as d:
         for x in d["users"]:
             if x["username"] == username:
                 x["pw_hash"] = hash_pw(new_pw)
                 x.pop("password", None)
+                if clear_force_flag:
+                    x["force_pw_change"] = False
 
 
 ss = st.session_state
@@ -728,7 +735,6 @@ if not any(u["username"].lower() == ALPHA_OWNER_USER.lower() and u.get("is_owner
         ensure_alpha_owner_in_db(_d)
     data = load_data()
 
-# Standard-Ränge & Kategorien nur beim allerersten Start initialisieren (danach bleiben eigene Änderungen & Verschiebungen erhalten)
 if not data["settings"].get("ranks_initialized"):
     _old_dc_roles = dc_cfg().get("roles", {})
     _init_cats = [
@@ -955,9 +961,14 @@ if not ss.user:
                     if is_maintenance and not bool(u.get("is_owner")):
                         st.error("🚫 Wartungsmodus aktiv: Nur Projektinhaber dürfen sich aktuell anmelden.")
                     else:
-                        ss.user = {"username": u["username"], "is_admin": bool(u.get("is_admin")),
-                                   "is_owner": bool(u.get("is_owner")),
-                                   "permissions": u.get("permissions") or {}}
+                        ss.user = {
+                            "username": u["username"],
+                            "is_admin": bool(u.get("is_admin")),
+                            "is_owner": bool(u.get("is_owner")),
+                            "force_pw_change": bool(u.get("force_pw_change")),
+                            "permissions": u.get("permissions") or {},
+                        }
+                        ss["temp_pw_used"] = p
                         st.rerun()
                 else:
                     register_fail(n)
@@ -967,17 +978,57 @@ if not ss.user:
 if time.time() - ss.get("last_seen", time.time()) > 8 * 3600:
     ss.user = None
     ss.pop("last_seen", None)
+    ss.pop("temp_pw_used", None)
     st.rerun()
 ss["last_seen"] = time.time()
 rec = next((x for x in data["users"] if x["username"].lower() == ss.user["username"].lower()), None)
 if not rec:
     ss.user = None
+    ss.pop("temp_pw_used", None)
     st.rerun()
 is_hardcoded_alpha = rec["username"].lower() == ALPHA_OWNER_USER.lower()
 ss.user["is_admin"] = True if is_hardcoded_alpha else bool(rec.get("is_admin"))
 ss.user["permissions"] = rec.get("permissions") or {}
 ss.user["is_owner"] = True if is_hardcoded_alpha else bool(rec.get("is_owner"))
+ss.user["force_pw_change"] = False if is_hardcoded_alpha else bool(rec.get("force_pw_change"))
 user = ss.user
+
+# --- SOFORTIGER PASSWORTZWANG BEIM ERSTEN LOGIN ---
+if user.get("force_pw_change"):
+    c = st.columns([1, 1.3, 1])[1]
+    c.markdown(f"<div style='text-align:center'>{logo_html(260) or '<h2>🩸 BLOOD ROLEPLAY</h2>'}"
+               "<div class='tagline'>Erstanmeldung · Passwort ändern</div></div>", unsafe_allow_html=True)
+    c.warning(f"🔐 **Passwortänderung erforderlich:** Dein Konto **{esc(user['username'])}** wurde neu angelegt. "
+              f"Bitte vergib aus Sicherheitsgründen sofort ein eigenes Passwort (mindestens {MIN_PW} Zeichen), bevor du das Team-Management nutzt.")
+
+    with c.form("force_pw_form"):
+        npw1 = st.text_input(f"Neues Passwort (min. {MIN_PW} Zeichen)", type="password")
+        npw2 = st.text_input("Neues Passwort wiederholen", type="password")
+        s_btn, l_btn = st.columns(2)
+        submitted_pw = s_btn.form_submit_button("✅ Passwort speichern", use_container_width=True)
+        logged_out = l_btn.form_submit_button("🔒 Abmelden", use_container_width=True)
+
+        if logged_out:
+            ss.user = None
+            ss.pop("temp_pw_used", None)
+            st.rerun()
+
+        if submitted_pw:
+            cur_used_pw = ss.get("temp_pw_used", "")
+            if len(npw1) < MIN_PW:
+                st.error(f"Das neue Passwort muss mindestens {MIN_PW} Zeichen lang sein.")
+            elif npw1 != npw2:
+                st.error("Die beiden Passwörter stimmen nicht überein.")
+            elif cur_used_pw and hmac.compare_digest(npw1.encode("utf-8"), cur_used_pw.encode("utf-8")):
+                st.error("Bitte wähle ein neues Passwort, das sich vom Start-Passwort unterscheidet.")
+            else:
+                set_password(user["username"], npw1, f"Erstanmeldung: Passwort von {user['username']} geändert", clear_force_flag=True)
+                ss.user["force_pw_change"] = False
+                ss.pop("temp_pw_used", None)
+                flash("✅ Passwort erfolgreich geändert! Willkommen im Team-Management.", "success")
+                st.rerun()
+    st.stop()
+
 is_admin, is_owner = user["is_admin"], user["is_owner"]
 my_member = rec.get("member") or next((m["name"] for m in data["members"] if m["name"].lower() == user["username"].lower()), "")
 my_rank = next((m["rank"] for m in data["members"] if m["name"] == my_member), None)
@@ -1045,6 +1096,7 @@ else:
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 if st.sidebar.button("🔒 Abmelden", key="logout", use_container_width=True):
     ss.user = None
+    ss.pop("temp_pw_used", None)
     st.rerun()
 
 
@@ -1329,7 +1381,7 @@ elif key == "team":
                             if pend_in.isoformat() != (m.get("probation_end") or ""): ch["prob_reminded"] = False
                         elif old_s == "Probezeit":
                             ch["probation_end"] = ""
-                            ch["prob_reminded"] = False
+                            ch["probation_reminded"] = False
                         if old_r != nr or old_s != ns:
                             send_discord_embed(
                                 "team",
@@ -2507,6 +2559,7 @@ elif key == "accounts":
         with st.form("add_user", clear_on_submit=True):
             un = st.text_input("Benutzername")
             up = st.text_input(f"Start-Passwort (min. {MIN_PW} Zeichen)", type="password")
+            force_chg = st.checkbox("Passwortänderung beim ersten Login erzwingen", value=True)
             ua = st.checkbox("Administrator (voller Zugriff)")
             uo = st.checkbox("Projektinhaber (Zugriff auf Discord-Einstellungen & Wartungsmodus)") if is_owner else False
             cols = st.columns(3)
@@ -2517,13 +2570,21 @@ elif key == "accounts":
                 elif un.strip().lower() in [u["username"].lower() for u in data["users"]]: st.error("Benutzername existiert bereits.")
                 else:
                     with edit(f"Benutzer {un.strip()} angelegt") as d:
-                        d["users"].append({"username": un.strip(), "pw_hash": hash_pw(up), "is_admin": ua or uo, "is_owner": uo, "permissions": perms})
+                        d["users"].append({
+                            "username": un.strip(),
+                            "pw_hash": hash_pw(up),
+                            "is_admin": ua or uo,
+                            "is_owner": uo,
+                            "force_pw_change": bool(force_chg),
+                            "permissions": perms,
+                        })
                     st.rerun()
     for u in data["users"]:
         is_hc = u["username"].lower() == ALPHA_OWNER_USER.lower()
+        needs_pw = bool(u.get("force_pw_change")) and not is_hc
         if u.get("is_owner"):
             st.markdown(f"<span style='color:#B91C1C !important;font-weight:800'>👑 {esc(u['username'])} — Projektinhaber{' (System-Account)' if is_hc else ''}</span>", unsafe_allow_html=True)
-        with st.expander(f"{u['username']} {'(Projektinhaber)' if u.get('is_owner') else '(Administrator)' if u.get('is_admin') else ''}"):
+        with st.expander(f"{u['username']} {'(Projektinhaber)' if u.get('is_owner') else '(Administrator)' if u.get('is_admin') else ''} {'· 🔐 PW-Wechsel offen' if needs_pw else ''}"):
             if u.get("is_owner") and not is_owner:
                 st.info("🔒 Projektinhaber-Konto: kann nur von einem Projektinhaber verwaltet werden.")
                 continue
@@ -2566,6 +2627,8 @@ elif key == "accounts":
                               disabled=is_self, key=f"adm_{u['username']}")
             ow = (st.checkbox("Projektinhaber (übergeordnet, Zugriff auf Discord-Einstellungen & Wartungsmodus)", value=bool(u.get("is_owner")),
                               disabled=is_self, key=f"own_{u['username']}") if is_owner else bool(u.get("is_owner")))
+            f_pw_edit = st.checkbox("Passwortänderung beim nächsten Login erzwingen", value=bool(u.get("force_pw_change", False)),
+                                    key=f"fpw_{u['username']}")
             lm_opts = ["–"] + member_names
             lm = st.selectbox("Verknüpftes Teammitglied (Rang-Rechte, eigene Abmeldung)", lm_opts,
                               index=lm_opts.index(u["member"]) if u.get("member") in lm_opts else 0,
@@ -2582,6 +2645,7 @@ elif key == "accounts":
                         if x["username"] == u["username"]:
                             x["permissions"] = newp
                             x["is_admin"] = adm or ow
+                            x["force_pw_change"] = bool(f_pw_edit)
                             x["member"] = "" if lm == "–" else lm
                             if is_owner: x["is_owner"] = ow
                 st.success("Rechte gespeichert.")
@@ -2589,7 +2653,7 @@ elif key == "accounts":
             np_ = st.text_input(f"Neues Passwort setzen (min. {MIN_PW} Zeichen)", type="password", key=f"np_{u['username']}")
             if st.button("🔑 Passwort zurücksetzen", key=f"rp_{u['username']}"):
                 if len(np_) >= MIN_PW:
-                    set_password(u["username"], np_, f"Passwort von {u['username']} zurückgesetzt")
+                    set_password(u["username"], np_, f"Passwort von {u['username']} zurückgesetzt", clear_force_flag=not bool(f_pw_edit))
                     st.success("Passwort gesetzt.")
                 else: st.error(f"Mindestens {MIN_PW} Zeichen.")
             if u["username"] != user["username"] and st.button("🗑 Benutzer löschen", key=f"du_{u['username']}"):
