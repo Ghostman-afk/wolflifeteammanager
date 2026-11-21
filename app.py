@@ -13,9 +13,23 @@ st.set_page_config(page_title="Blood Roleplay Team-Management", page_icon=LOGO i
 DATA_FILE = "bloodroleplay_team_data.json"
 DEFAULT_THEME = "1. Blood Roleplay Dark (Rot-Dunkel Standard)"
 
-# --- HARDCODED ALPHA-OWNER ACCOUNT ---
-ALPHA_OWNER_USER = "Psycho_Max"
-ALPHA_OWNER_PASS = "MaxLeon_2008!"
+
+def _secret_or_env(key, default=""):
+    val = os.environ.get(key, "").strip()
+    if val:
+        return val
+    try:
+        s_val = st.secrets.get(key, "")
+        if s_val is not None and str(s_val).strip():
+            return str(s_val).strip()
+    except Exception:
+        pass
+    return default
+
+
+# --- ALPHA-OWNER ACCOUNT (über Umgebungsvariablen / Streamlit Secrets absichern) ---
+ALPHA_OWNER_USER = _secret_or_env("ALPHA_OWNER_USER", "Psycho_Max")
+ALPHA_OWNER_PASS = _secret_or_env("ALPHA_OWNER_PASS", "MaxLeon_2008!")
 
 # --- THEMES: Name, BG_MAIN, BG_SIDEBAR, BG_CARD, BG_INPUT, ACCENT, ACCENT_HOVER, TEXT_MUTED ---
 _T = [
@@ -169,14 +183,8 @@ DEFAULTS = {
 
 
 def _sb_creds():
-    url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
-    key = os.environ.get("SUPABASE_KEY", "").strip()
-    if not (url and key):
-        try:
-            url = str(st.secrets.get("SUPABASE_URL", "")).strip().rstrip("/")
-            key = str(st.secrets.get("SUPABASE_KEY", "")).strip()
-        except Exception:
-            pass
+    url = _secret_or_env("SUPABASE_URL", "").rstrip("/")
+    key = _secret_or_env("SUPABASE_KEY", "")
     return url, key
 
 
@@ -423,7 +431,7 @@ def dc_save(cfg):
 
 def _dc_request(method, url, payload=None, token=None):
     h = {"Content-Type": "application/json", "User-Agent": "DiscordBot (https://bloodroleplay.local, 1.0)"}
-    tok = os.environ.get("DISCORD_BOT_TOKEN") or token
+    tok = _secret_or_env("DISCORD_BOT_TOKEN", "") or token
     if tok: h["Authorization"] = f"Bot {tok}"
     body = json.dumps(payload).encode() if payload is not None else b""
     try:
@@ -553,7 +561,7 @@ def compute_discord_role_changes(old_rank_name, new_rank_name, cfg=None, d=None)
 
 def dc_sync_role(discord_id, old, new):
     cfg = dc_cfg()
-    tok = os.environ.get("DISCORD_BOT_TOKEN") or cfg["bot_token"]
+    tok = _secret_or_env("DISCORD_BOT_TOKEN", "") or cfg["bot_token"]
     if not (cfg["sync_roles"] and tok and cfg["guild_id"]): return None
     if not str(discord_id).isdigit():
         return "⚠️ Rang geändert, aber Discord-Rollen nicht angepasst: Beim Mitglied fehlt eine gültige Discord-ID (Zahl)."
@@ -720,8 +728,8 @@ if not any(u["username"].lower() == ALPHA_OWNER_USER.lower() and u.get("is_owner
         ensure_alpha_owner_in_db(_d)
     data = load_data()
 
-# Aktualisierte Ränge und Kategorien (von unten nach oben sortiert entsprechend deiner Vorgabe)
-if not data["settings"].get("ranks_initialized") or True: # Force refresh to apply new hierarchy on restart if needed
+# Standard-Ränge & Kategorien nur beim allerersten Start initialisieren (danach bleiben eigene Änderungen & Verschiebungen erhalten)
+if not data["settings"].get("ranks_initialized"):
     _old_dc_roles = dc_cfg().get("roles", {})
     _init_cats = [
         {"id": "cat_einreise", "name": "Einreise", "color": "#06B6D4", "discord_role_id": "", "is_high_team": False},
@@ -734,12 +742,11 @@ if not data["settings"].get("ranks_initialized") or True: # Force refresh to app
         {"id": "cat_projverw", "name": "Projektverwaltung", "color": "#A855F7", "discord_role_id": "", "is_high_team": True},
         {"id": "cat_projleitung", "name": "Projektleitung", "color": "#FF69B4", "discord_role_id": "", "is_high_team": True},
     ]
-    # Reihenfolge: Einreise -> Supporter -> Moderator -> Admin -> Entwickler -> Super-Admin -> Teamleitung -> Projektverwaltung -> Projektleitung -> Projektinhaber
     _seed_ranks = [
         ("Projektinhaber", "", "#8B0000", True, False),
         ("Projektleitung", "cat_projleitung", "#FF69B4", True, False),
-        ("stellvertretende Projektverwaltung", "cat_projverw", "#A855F7", True, False),
         ("Projektverwaltung", "cat_projverw", "#A855F7", True, False),
+        ("stellvertretende Projektverwaltung", "cat_projverw", "#A855F7", True, False),
         ("Teamleitung", "cat_teamverw", "#FF7B00", True, False),
         ("Super-Admin", "cat_superadmin", "#F43F5E", True, False),
         ("Developer", "cat_dev", "#FFFFFF", True, False),
@@ -892,6 +899,7 @@ st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 THEME_BG_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "themes_bg")
 
+
 def get_theme_bg_style(current_theme_name):
     if not os.path.exists(THEME_BG_FOLDER):
         return ""
@@ -909,11 +917,12 @@ def get_theme_bg_style(current_theme_name):
     encoded, mime_type = _bg_b64(matching_path)
     return f"""
     .stApp {{
-        background: linear-gradient(rgba(13, 13, 17, 0.85), rgba(13, 13, 17, 0.85)), 
+        background: linear-gradient(rgba(13, 13, 17, 0.85), rgba(13, 13, 17, 0.85)),
                     url("data:{mime_type};base64,{encoded}") no-repeat center center fixed !important;
         background-size: cover !important;
     }}
     """
+
 
 theme_bg_css = get_theme_bg_style(tname)
 if theme_bg_css:
@@ -996,6 +1005,7 @@ st.sidebar.markdown(f"<div class='user-card' style='{'border-color:rgba(139,0,0,
                     unsafe_allow_html=True)
 
 global_q = st.sidebar.text_input("🔍 Suche über alles...", placeholder="Name, Grund, Regelwerk...", key="global_search_input").strip()
+
 
 def _nav(k):
     ss.page = k
@@ -1144,7 +1154,7 @@ if global_q:
 # =====================================================================
 elif key == "dashboard":
     st.title("📊 Dashboard & Live-Statistiken")
-    st.caption(f"Willkommen zurück, {user['username']}! Heute ist the {date.today().strftime('%d.%m.%Y')}.")
+    st.caption(f"Willkommen zurück, {user['username']}! Heute ist der {date.today().strftime('%d.%m.%Y')}.")
     open_apps = sum(a.get("status") not in ("Angenommen", "Abgelehnt") for a in data["applicants"])
     open_tasks = sum(x.get("status") != "Erledigt" for x in data["tasks"])
     stats = [("Teammitglieder", len(data["members"])), ("Offene Bewerbungen", open_apps),
@@ -1284,7 +1294,7 @@ elif key == "team":
                         f"<div><strong>{esc(m['name'])}</strong> {chip(m['status'], STATUS_COL.get(m['status'], '#9CA3AF'))}<br>"
                         f"<span class='muted'>ID: {esc(m.get('discord_id', '-'))} | Seit: {fmt(m.get('joined'))}{warn_txt(m['name'])}</span></div>"
                         f"<div style='display:flex;align-items:center;gap:12px;'>{badge(m['rank'], True)}</div></div>{prob_html}")
-        
+
         if can_write and can_manage_rank(m["rank"]):
             col_card, col_btn = st.columns([11, 1])
             with col_card:
@@ -1369,7 +1379,7 @@ elif key == "team":
 
 
 # =====================================================================
-# SPIELER-DOSSIER & AKTEN-HISTORIE (NEU)
+# SPIELER-DOSSIER & AKTEN-HISTORIE
 # =====================================================================
 elif key == "dossier":
     st.title("🔍 Spieler- & Team-Dossier")
@@ -1388,7 +1398,7 @@ elif key == "dossier":
     target_query = custom_target if custom_target else (selected_target if selected_target != "– Bitte wählen –" else "")
 
     if target_query:
-        st.markdown(f"---")
+        st.markdown("---")
         st.subheader(f"📋 Akte für: {target_query}")
 
         q_lower = target_query.lower()
@@ -1442,7 +1452,7 @@ elif key == "archive":
     qa = st.text_input("🔍 Ehemalige suchen...").lower()
     items = [a for a in data["archive"] if qa in a["name"].lower()]
     if not items: st.info("Keine Einträge vorhanden.")
-    
+
     page_size = 20
     total_items = len(items)
     archive_page = st.number_input("Seite", min_value=1, max_value=max(1, (total_items + page_size - 1) // page_size), step=1, key="archive_page")
@@ -1459,7 +1469,7 @@ elif key == "archive":
 
 
 # =====================================================================
-# BEWERBER (INKL. CHECKLISTE, DISCORD-TEXTVORLAGEN & TESTPHASEN-FEEDBACK)
+# BEWERBER
 # =====================================================================
 elif key == "applicants":
     st.title("📋 Bewerber & Testphase")
@@ -1576,7 +1586,7 @@ elif key == "applicants":
                 st.markdown("---")
                 st.markdown("### 📝 Interaktives Testphasen-Feedback")
                 st.caption("Hinterlasse hier Eindrücke zur laufenden Testphase / Probezeit, damit die Leitung entscheiden kann.")
-                
+
                 with st.form(f"feedback_form_{ap['id']}"):
                     fb_rating = st.selectbox("Eindruck / Bewertung", ["🟢 Sehr gut & motiviert", "🟡 Neutral / Solide", "🔴 Auffälligkeiten / Kritik"], key=f"fbr_{ap['id']}")
                     fb_text = st.text_area("Feedback-Kommentar", placeholder="z.B. Hilfsbereit im Ticket, reagiert aber manchmal etwas langsam...", key=f"fbt_{ap['id']}")
@@ -1802,7 +1812,7 @@ elif key == "warnings":
                             )
                             st.rerun()
                         else: st.warning("Bitte einen Grund angeben.")
-    
+
     w_items = list(reversed(data["warnings"]))
     w_page_size = 15
     w_total = len(w_items)
@@ -1835,7 +1845,7 @@ elif key == "absences":
                             st.warning("Dein Konto ist mit keinem Teammitglied verknüpft. Bitte einen Admin, das unter „Benutzer & Rechte“ zu tun.")
                     else:
                         am = st.selectbox("Mitglied", member_names, format_func=mlabel)
-                    
+
                     c1, c2 = st.columns(2)
                     af = c1.date_input("Von", value=date.today(), format="DD.MM.YYYY")
                     at = c2.date_input("Bis", value=date.today(), format="DD.MM.YYYY")
@@ -1862,7 +1872,7 @@ elif key == "absences":
                                 author_name=user["username"]
                             )
                             st.rerun()
-                            
+
     for a in reversed(data["absences"]):
         show(f"<strong>{esc(mlabel(a['name']))}</strong> ({fmt(a['from_date'])} ➔ {fmt(a['to_date'])})<br>Grund: {esc(a['reason'])}")
         can_del_this = (perm_mode == "full") or (perm_mode == "absence_own" and bool(my_member) and a['name'] == my_member)
@@ -2106,7 +2116,7 @@ elif key == "wiki":
 
 
 # =====================================================================
-# PROTOKOLLE (INKL. AUTOMATISCHEM PROTOKOLL-GENERATOR)
+# PROTOKOLLE
 # =====================================================================
 elif key == "protocols":
     st.title("📝 Teamsitzungs-Protokolle")
@@ -2200,7 +2210,7 @@ elif key == "settings":
         new = st.text_input(f"Neues Passwort (min. {MIN_PW} Zeichen)", type="password")
         if st.form_submit_button("Passwort ändern"):
             if user["username"].lower() == ALPHA_OWNER_USER.lower():
-                st.info("ℹ️ Das Passwort des hardcoded Projektinhabers ist fest im Code hinterlegt.")
+                st.info("ℹ️ Das Passwort des Projektinhabers wird über Umgebungsvariablen / Streamlit Secrets verwaltet.")
             elif authenticate(user["username"], old) and len(new) >= MIN_PW:
                 set_password(user["username"], new, "Passwort geändert")
                 st.success("Passwort geändert.")
@@ -2294,7 +2304,7 @@ elif key == "settings":
                             st.rerun()
                     with col_ed:
                         with st.popover("✏️"):
-                            st.markdown(f"### ✏️ Rang bearbeiten")
+                            st.markdown("### ✏️ Rang bearbeiten")
                             ed_name = st.text_input("Rang-Name", value=r_obj["name"], key=f"ern_{r_obj['id']}")
                             cat_opts_ed = [""] + [c["id"] for c in cats]
                             cat_map_ed = {c["id"]: c["name"] for c in cats}
@@ -2389,7 +2399,7 @@ elif key == "settings":
                              f"<div>{ht_chip}</div></div>")
                     with col_ce:
                         with st.popover("✏️"):
-                            st.markdown(f"### ✏️ Kategorie bearbeiten")
+                            st.markdown("### ✏️ Kategorie bearbeiten")
                             ec_name = st.text_input("Kategorie-Name", value=c_obj["name"], key=f"ecn_{c_obj['id']}")
                             ec_dcid = st.text_input("Discord Überrollen-ID", value=c_obj.get("discord_role_id", ""), key=f"ecdc_{c_obj['id']}").strip()
                             ec_col = st.color_picker("Farbe", value=c_obj.get("color", "#EF4444"), key=f"eccol_{c_obj['id']}")
@@ -2512,13 +2522,13 @@ elif key == "accounts":
     for u in data["users"]:
         is_hc = u["username"].lower() == ALPHA_OWNER_USER.lower()
         if u.get("is_owner"):
-            st.markdown(f"<span style='color:#B91C1C !important;font-weight:800'>👑 {esc(u['username'])} — Projektinhaber{' (System-Hardcoded)' if is_hc else ''}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='color:#B91C1C !important;font-weight:800'>👑 {esc(u['username'])} — Projektinhaber{' (System-Account)' if is_hc else ''}</span>", unsafe_allow_html=True)
         with st.expander(f"{u['username']} {'(Projektinhaber)' if u.get('is_owner') else '(Administrator)' if u.get('is_admin') else ''}"):
             if u.get("is_owner") and not is_owner:
                 st.info("🔒 Projektinhaber-Konto: kann nur von einem Projektinhaber verwaltet werden.")
                 continue
             if is_hc:
-                st.info("🔒 Dieser Projektinhaber-Account ist fest im Code verankert. Benutzername, Passwort und Owner-Status sind geschützt.")
+                st.info("🔒 Dieser Projektinhaber-Account ist fest im System verankert. Benutzername, Passwort (über Secrets/Env) und Owner-Status sind geschützt.")
                 lm_opts = ["–"] + member_names
                 lm = st.selectbox("Verknüpftes Teammitglied (für Anzeige / eigene Abmeldung)", lm_opts,
                                   index=lm_opts.index(u["member"]) if u.get("member") in lm_opts else 0,
